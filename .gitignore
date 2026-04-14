@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Disk cache (core/cache.py) — 외부 API 응답 캐시
+.cache/
