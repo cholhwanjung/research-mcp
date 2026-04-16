@@ -68,14 +68,20 @@ async def fetch_network_papers(
     item_key: str,
     max_fetch: int,
     sleep_sec: float = 1.5,
+    publication_date_or_year: str | None = None,
 ) -> list[dict]:
-    """SS API offset 기반 페이지네이션으로 citations 또는 references 전량 수집.
+    """SS API offset 기반 페이지네이션으로 citations / references 수집.
 
-    공식 문서 기준:
-    - limit 최대 1000 (한 번 요청에 1000개 초과 불가)
-    - 응답의 'next' 필드가 다음 offset; 없으면 마지막 페이지
+    공식 문서 (sources/swagger.json) 기준:
+    - limit 최대 1000, 응답 `next` 필드로 다음 offset.
+    - **citations endpoint는 publicationDate 내림차순으로 응답** — 인기 논문에서
+      첫 페이지는 신생 인용수 0 논문으로 가득. 의미 있는 결과를 얻으려면
+      `publication_date_or_year=":YYYY"` 필터로 최근 1년을 잘라낸다.
+    - light 필드 + `isInfluential` (ADR-014 보강): 응답 크기는 유지하면서
+      velocity 임계값 미달이라도 SS가 영향력 있다고 표시한 인용을 살린다.
+      entry top-level의 `isInfluential`은 paper dict의 `is_influential` 키로 주입.
     """
-    FIELDS = "title,authors,year,citationCount,influentialCitationCount,externalIds,url,venue"
+    FIELDS = "paperId,title,year,citationCount,externalIds,isInfluential"
     BATCH = 1000
     all_papers: list[dict] = []
     offset = 0
@@ -84,15 +90,20 @@ async def fetch_network_papers(
         limit = min(BATCH, max_fetch - len(all_papers))
         url = f"{SS_BASE}/{pid}/{endpoint}"
         params = {"fields": FIELDS, "limit": str(limit), "offset": str(offset)}
+        if publication_date_or_year:
+            params["publicationDateOrYear"] = publication_date_or_year
         resp = await ss_get(url, params)
         if not isinstance(resp, dict):
             break
 
-        items = [
-            c[item_key]
-            for c in (resp.get("data") or [])
-            if c.get(item_key, {}).get("title")
-        ]
+        items: list[dict] = []
+        for entry in resp.get("data") or []:
+            paper = entry.get(item_key) or {}
+            if not paper.get("title"):
+                continue
+            # entry wrapper의 isInfluential을 paper dict로 주입 (없으면 False).
+            paper["is_influential"] = bool(entry.get("isInfluential", False))
+            items.append(paper)
         if not items:
             break
 

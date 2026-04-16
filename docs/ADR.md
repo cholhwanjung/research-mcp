@@ -19,6 +19,7 @@
 | ADR-011 | Accepted | HTTP 호출에 항상 User-Agent 헤더 첨부 (`research-mcp/0.1`) — 일부 서비스 default-UA 403 방지 |
 | ADR-012 | Accepted | GeekNews 소스 제외 — endpoint 지속 403, UA 헤더로도 미해결 (2026-05-31) |
 | ADR-013 | Accepted | 테스트 삭제 정책 — 구현 완료 + 사용자 명시 승인 시에만. TDD 룰은 유지 (2026-05-31) |
+| ADR-014 | Accepted | research-flow 방향 + velocity 필터 + SS citations endpoint 페이지네이션 (2026-06-04) |
 
 ---
 
@@ -335,6 +336,71 @@ Phase 0-6 전체 완료 + 240 unit + 6 smoke tests PASS 검증 후 운영 단계
 - 수정: `pyproject.toml`의 `[tool.pytest.ini_options]` 섹션 제거, `dev = ["pytest>=8.0"]` → `dev = []`.
 - CLAUDE.md TDD 하드 룰에 "삭제는 사용자 명시 승인 시" 한 줄 보강.
 - 다음 구현부터 새 테스트 작성 → 같은 사이클 (RED → GREEN → 완료 → 사용자 승인 시 정리).
+
+---
+
+## ADR-014 — research-flow 인과 방향 + velocity 필터 + SS citations 페이지네이션
+**Status**: Accepted (2026-06-04)
+
+### Context
+실 사용 단계 (BLIP-2 anchor)로 검증한 결과 세 가지 문제가 동시에 드러남:
+
+1. **viz 방향** — `build_mermaid` / `build_canvas_json`이 `groups` 단일 인자만 받아 references와 citations를 같은 화살표 방향(`anchor → group → paper`)으로 그렸다. 사용자는 "BLIP-2가 인용한 논문 → BLIP-2 → BLIP-2를 인용한 논문" 인과 흐름을 원함.
+2. **velocity 노이즈** — citation 결과에 발표 1년 이내 인용수 0~1인 논문 다수 포함. 노이즈 비율 높음.
+3. **SS citations 호출 비용** — SS `/paper/{id}/citations` endpoint는 **publicationDate 내림차순**으로 응답 (캐시 검증: BLIP-2 citations 첫 200건 모두 2026년 인용수 0). 의미 있는 논문(velocity 큰)은 페이지 깊은 곳에 있어, velocity 필터를 클라이언트 측에서만 적용하면 페이지 9개를 모두 fetch해야 함.
+
+### Decision
+세 가지를 한 묶음으로 처리:
+
+**1. viz 시그니처 분리**
+- `build_mermaid(anchor, ref_groups, cite_groups, direction)`, `build_canvas_json(anchor, ref_groups, cite_groups)`.
+- Mermaid: refs는 `paper → group → anchor`, cites는 `anchor → group → paper`.
+- Canvas: refs는 anchor 왼쪽 (x < 0), cites는 오른쪽 (x > 0). edge `fromNode/toNode`도 인과 방향.
+- `build_citation_canvas` MCP tool도 같은 시그니처로 갱신.
+
+**2. velocity 필터**
+- `render_sorted_list`에 `min_velocity: float = 0.0` 인자 추가. velocity 모드일 때만 적용.
+- `get_references_by_citations`, `get_citations_by_citations` 두 tool 모두 `min_velocity=10.0` 기본값 + `sort="velocity"` 기본값.
+
+**3. SS citations endpoint 페이지네이션**
+- `fetch_network_papers`에 `publication_date_or_year: str | None = None` 인자 추가. SS swagger의 `publicationDateOrYear` 파라미터로 전달.
+- `get_citations_by_citations`는 `exclude_recent_year=True` (기본)일 때 `:<current_year-1>`를 자동 적용 → SS 측에서 최근 1년 신생 논문 제거. min_velocity≥10과 정합 (1년 미만 누적 시간 부족).
+- `fetch_network_papers` 요청 필드를 **light** (`paperId,title,year,citationCount,externalIds`)로 축소. 무거운 메타(authors/venue/influentialCitationCount/url)는 페이지네이션 단계에서 제외. 필요 시 호출측이 `/paper/batch`로 보강.
+- `get_references_by_citations` 기본 `max_fetch` 200 → 500 (references는 보통 100 이내라 한 페이지로 충분).
+- `get_citations_by_citations` 기본 `max_fetch` 200 → 1000.
+
+### Reasoning
+- **시그니처 분리**가 surgical하다 — 단일 `groups`에 kind 필드를 끼우는 변종보다 명시적. 호출측(skill, viz_tools)도 자연스럽게 두 인자를 분리해서 LLM이 그룹핑 단계에서 refs/cites를 독립적으로 처리하도록 강제.
+- velocity 10은 보수적 임계값 — "발표 후 1년에 인용 10건" 또는 "5년에 50건" 정도. 분야 평균보다 높지만 압도적 영향력 논문에만 좁히지 않음. 기본값일 뿐이고 사용자가 매번 override 가능.
+- SS API 응답 정렬 분석은 캐시 데이터로 직접 검증 (`.cache/06fb47f...` BLIP-2 citations: 첫 entry부터 200번째까지 모두 2026년). swagger `publicationDateOrYear` 파라미터가 가장 정확한 해결책.
+- light fields로 응답 크기가 줄어 페이지당 네트워크 시간 단축. authors/venue가 필요해지면 후속 ADR에서 batch 보강 단계 도입.
+
+### Tradeoffs
+- **viz 시그니처 변경은 호환성 깨짐** — 기존 호출자(외부에서 본 tool을 직접 호출하던 사용자)는 갱신 필요. surgical 원칙에 따라 deprecation alias는 두지 않음 (단일 사용자, 외부 의존 없음).
+- **`exclude_recent_year=True`는 신생 연구를 놓침** — 발표 직후 폭발적 인용을 받는 논문은 1년 동안 보이지 않는다. 사용자가 명시적으로 `exclude_recent_year=False, min_velocity=0`으로 전환 가능. SKILL.md drill-down 옵션에 명시.
+- **light fields는 author/venue 누락** — render 결과에 "-"로 표시. 필요 시 top_k 결정 후 batch 보강 (현 ADR 범위 밖, 후속 확장).
+- **`publicationDateOrYear` 캐시 키 분리** — 같은 anchor라도 필터 다르면 다른 캐시 entry. 디스크 부담 미미.
+
+### 구현 영향
+- `analysis/viz.py` — 새 시그니처. ADR-005 supersede 아님 (확장).
+- `analysis/ranking.py` — `min_velocity` 인자 추가.
+- `sources/semantic_scholar.py` — `publication_date_or_year` + light fields.
+- `tools/citation_tools.py` — 두 tool 모두 기본값 변경, `get_citations_by_citations`에 `exclude_recent_year` 인자.
+- `tools/viz_tools.py` — 시그니처 동기화.
+- `.claude/skills/research-flow/SKILL.md` — 8 step 갱신, drill-down 옵션에 신생 포함 모드 추가.
+- 회귀 테스트 25 PASS (`tests/test_analysis_viz.py`, `test_tools_viz.py`, `test_analysis_velocity_filter.py`, `test_sources_ss_fetch.py`).
+
+### 보강 (2026-06-04, isInfluential 통합)
+사용자 제안 검토 결과 #2(isInfluential 활용)만 채택. velocity가 잡지 못하는 강한 영향력 신호 (분야가 좁아 카운트 누적이 느린 후속, 1년 차 핵심 인용 등)를 SS 자체 산출 시그널로 보강.
+
+- `fetch_network_papers`의 fields에 `isInfluential` 추가. entry top-level의 `isInfluential`은 paper dict의 `is_influential` 키로 주입.
+- `render_sorted_list`의 velocity 필터를 OR 조건으로 확장:
+  `velocity >= min_velocity OR is_influential is True`.
+- 표시 시 영향력 인용은 줄 머리에 `★` 표시 (시각 식별).
+- count 정렬 모드는 회귀 없음 (필터 자체가 velocity 모드 한정).
+- 회귀 테스트 31 PASS (+6, `tests/test_is_influential.py`).
+
+사용자 제안 #1(중간 sampling)은 거부 — 이미 `publicationDateOrYear=:<year-1>` 필터로 신생 컷팅, sampling은 정확도 손실. #3(max_fetch=1000 검증)은 light fields 응답 크기가 작아 1 페이지 부담 미미, 현재 값 유지.
 
 ---
 

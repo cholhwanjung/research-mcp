@@ -39,14 +39,14 @@ research-mcp/
 │
 ├── sources/
 │   ├── arxiv.py                   # search, metadata, pdf, text-extract. `build_pdf_url(id)` (HTTPS + .pdf suffix)
-│   ├── semantic_scholar.py        # meta, refs, cites. `ss_get(url, params, ttl)` 단일 진입점 + `get_contexts(citing, cited)` (ADR-009) + `recommend_for_paper(pid, k)` (D-4, SS_REC_BASE)
+│   ├── semantic_scholar.py        # meta, refs, cites. `ss_get(url, params, ttl)` 단일 진입점 + `get_contexts(citing, cited)` (ADR-009) + `recommend_for_paper(pid, k)` (D-4, SS_REC_BASE). `fetch_network_papers`는 light 필드 + `publication_date_or_year` 옵션 (ADR-014)
 │   └── hf_daily.py                # 일일 인기 논문 (Phase 4). 비공식 JSON API → HTML 스크래핑 (paper ID + title) fallback (ADR-006). 1일 TTL cache.
 │
 ├── analysis/
 │   ├── format.py                  # 논문 dict → 한국어 텍스트
-│   ├── ranking.py                 # citation 정렬·렌더. `citation_velocity(p, year, bias_newcomer)`, `sort_by_velocity`, `render_sorted_list(sort=count|velocity)` (ADR-004)
+│   ├── ranking.py                 # citation 정렬·렌더. `citation_velocity(p, year, bias_newcomer)`, `sort_by_velocity`, `render_sorted_list(sort=count|velocity, min_velocity)` (ADR-004, ADR-014)
 │   ├── grouping.py                # Claude 동적 토픽 분류 입력 빌더. `pack_reference(ref, contexts)` + `build_classification_prompt(anchor, packed)` (ADR-009)
-│   └── viz.py                     # `build_mermaid(anchor, groups, direction)` + `build_canvas_json(anchor, groups)` — Canvas 1.0 spec dict (ADR-005)
+│   └── viz.py                     # `build_mermaid(anchor, ref_groups, cite_groups, direction)` + `build_canvas_json(anchor, ref_groups, cite_groups)` — refs → anchor → cites 흐름 (ADR-005, ADR-014)
 │
 ├── wiki/
 │   ├── vault.py                   # Obsidian vault read/write
@@ -103,8 +103,8 @@ research-mcp/
 | `search_papers` | 유지 | 기간 분류 그대로 |
 | `get_paper_by_id` | 변경 | 응답에 `contexts` 일부 포함 |
 | `read_paper` | 변경 | PDF를 `pdfs/`에 저장 + vault 노트 경로 반환 |
-| `get_references_by_citations` | 변경 | `sort=count\|velocity`, intent/contexts 동봉 |
-| `get_citations_by_citations` | 변경 | 위와 동일 |
+| `get_references_by_citations` | 변경 | `sort=velocity`(기본), `min_velocity=10` 필터 (ADR-014) |
+| `get_citations_by_citations` | 변경 | 위 + `exclude_recent_year=True` (SS publicationDate desc 응답 → 최근 1년 SS 측 컷, ADR-014) |
 | `download_paper` | **신규(2.2)** | PDF만 다운로드 + vault stub 생성 |
 | `get_hf_daily_papers` | **신규(4)** | `date=today, limit=10`. ADR-006 fallback chain (API → HTML paper card 추출). |
 | ~~`get_geeknews`~~ | **제거(2026-05-31)** | news.hada.io/rss endpoint가 default-UA를 403 차단, UA 헤더 추가에도 미해결 → 도구·워크플로우에서 제외. |
@@ -112,7 +112,7 @@ research-mcp/
 | `get_recommended_papers` | **신규(3.2, D-4)** | SS Recommendations API. `(paper_id, k=10)` → 콘텐츠 유사 추천. 워크플로우 자동 편입 보류. |
 | `wiki_read_note` / `wiki_write_note` / `wiki_list` / `wiki_link` | **신규(2.4)** | Obsidian vault CRUD. slug 단순 식별자는 `papers/<id>/index.md` 자동 매핑 |
 | `extract_paper_figures` | **신규(2.4)** | 캐시된 PDF에서 figure 추출 → `papers/<id>/figures/fig_<n>.png` (ADR-010) |
-| `build_citation_canvas` | **신규(5)** | Mermaid 응답 + `vault/canvases/<slug>.canvas` 저장. ADR-005. |
+| `build_citation_canvas` | **변경(ADR-014)** | `(anchor, ref_groups, cite_groups)` 시그니처. refs → anchor → cites 인과 흐름. Mermaid 응답 + `vault/canvases/<slug>.canvas` 저장 (ADR-005, ADR-014). |
 
 ---
 

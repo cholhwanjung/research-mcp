@@ -1,34 +1,42 @@
 """시각화 산출물 빌더 ([ADR-005](../docs/ADR.md#adr-005)).
 
+방향: **references → anchor → citations** (인과 흐름).
+
 두 가지를 동시에 만든다:
-- `build_mermaid(anchor, groups, direction)` → Mermaid graph 텍스트 (Claude Desktop이 답변에서 즉시 렌더)
-- `build_canvas_json(anchor, groups)` → Obsidian Canvas 1.0 spec dict (사용자가 vault에서 자유 편집)
+- `build_mermaid(anchor, ref_groups, cite_groups, direction)` → Mermaid graph 텍스트
+- `build_canvas_json(anchor, ref_groups, cite_groups)` → Obsidian Canvas 1.0 spec dict
 
 입력 모델:
 - anchor: dict — {arxiv_id, title, year, citation_count, citation_velocity?}
-- groups: list of {"topic": str, "papers": list[dict]} — 동적 토픽 (ADR-009)
+- ref_groups / cite_groups: list of {"topic": str, "papers": list[dict]} — 동적 토픽 (ADR-009).
+  ref_groups의 paper는 anchor가 *인용한* 논문, cite_groups의 paper는 anchor를 *인용한* 논문.
 """
 
 from __future__ import annotations
 
-# Obsidian Canvas 좌표 (px). anchor 중심, 그룹 수직 분산, 그룹 오른쪽으로 paper.
+# Obsidian Canvas 좌표 (px). anchor 중앙 (x=0), refs 왼쪽 (음수), cites 오른쪽 (양수).
 _NODE_W = 260
 _NODE_H = 70
 _GROUP_GAP_Y = 180
 _COL_GAP_X = 360
 
 
-def _mermaid_id(prefix: str, i: int) -> str:
-    return f"{prefix}{i}"
-
-
 def _mermaid_label(text: str) -> str:
-    """Mermaid 노드 라벨용 escape. 따옴표 안전."""
+    """Mermaid 노드 라벨용 escape."""
     return text.replace('"', "'")
 
 
-def build_mermaid(anchor: dict, groups: list[dict], direction: str = "LR") -> str:
-    """anchor + 그룹별 paper로 Mermaid graph 텍스트 생성."""
+def _paper_label(p: dict) -> str:
+    return _mermaid_label(f"{p.get('title', 'paper')} ({p.get('year', '?')})")
+
+
+def build_mermaid(
+    anchor: dict,
+    ref_groups: list[dict],
+    cite_groups: list[dict],
+    direction: str = "LR",
+) -> str:
+    """anchor를 중심으로 ref_groups → anchor → cite_groups 흐름의 Mermaid graph."""
     lines: list[str] = [f"graph {direction}"]
 
     anchor_label = _mermaid_label(
@@ -37,18 +45,28 @@ def build_mermaid(anchor: dict, groups: list[dict], direction: str = "LR") -> st
     )
     lines.append(f'  anchor["{anchor_label}"]')
 
-    for gi, g in enumerate(groups):
-        gid = _mermaid_id("g", gi)
-        glabel = _mermaid_label(g.get("topic", f"group {gi}"))
+    # references: paper → group → anchor
+    for gi, g in enumerate(ref_groups):
+        gid = f"r{gi}"
+        glabel = _mermaid_label(g.get("topic", f"refs {gi}"))
+        lines.append(f'  {gid}["{glabel}"]')
+        lines.append(f"  {gid} --> anchor")
+        for pi, p in enumerate(g.get("papers") or []):
+            pid = f"r{gi}p{pi}"
+            lines.append(f'  {pid}["{_paper_label(p)}"]')
+            lines.append(f"  {pid} --> {gid}")
+
+    # citations: anchor → group → paper
+    for gi, g in enumerate(cite_groups):
+        gid = f"c{gi}"
+        glabel = _mermaid_label(g.get("topic", f"cites {gi}"))
         lines.append(f'  {gid}["{glabel}"]')
         lines.append(f"  anchor --> {gid}")
         for pi, p in enumerate(g.get("papers") or []):
-            pid = _mermaid_id(f"g{gi}p", pi)
-            plabel = _mermaid_label(
-                f"{p.get('title', 'paper')} ({p.get('year', '?')})"
-            )
-            lines.append(f'  {pid}["{plabel}"]')
+            pid = f"c{gi}p{pi}"
+            lines.append(f'  {pid}["{_paper_label(p)}"]')
             lines.append(f"  {gid} --> {pid}")
+
     return "\n".join(lines)
 
 
@@ -74,12 +92,65 @@ def _canvas_edge(eid: str, src: str, dst: str) -> dict:
     }
 
 
-def build_canvas_json(anchor: dict, groups: list[dict]) -> dict:
-    """Obsidian Canvas 1.0 spec dict. JSON dump 가능."""
+def _paper_text(p: dict) -> str:
+    return (
+        f"**{p.get('title', 'paper')}**\n"
+        f"arXiv:{p.get('arxiv_id', '')}  · {p.get('year', '?')}\n"
+        f"cited {p.get('citation_count', 0)}"
+    )
+
+
+def _place_side(
+    groups: list[dict],
+    side: str,
+    nodes: list[dict],
+    edges: list[dict],
+) -> None:
+    """한 쪽(refs=left, cites=right)의 그룹·논문 노드와 엣지 추가.
+
+    refs 면 edge 방향은 paper → group → anchor.
+    cites 면 anchor → group → paper.
+    """
+    is_ref = side == "ref"
+    sign = -1 if is_ref else 1
+    prefix = "r" if is_ref else "c"
+    group_x = sign * _COL_GAP_X
+    paper_x = sign * 2 * _COL_GAP_X
+
+    n_groups = len(groups)
+    first_y = -((n_groups - 1) * _GROUP_GAP_Y) // 2 if n_groups else 0
+
+    for gi, g in enumerate(groups):
+        gid = f"{prefix}{gi}"
+        gy = first_y + gi * _GROUP_GAP_Y
+        nodes.append(_canvas_node(gid, f"## {g.get('topic', f'{prefix} {gi}')}", x=group_x, y=gy))
+        if is_ref:
+            edges.append(_canvas_edge(f"e_{gid}_anchor", gid, "anchor"))
+        else:
+            edges.append(_canvas_edge(f"e_anchor_{gid}", "anchor", gid))
+
+        papers = g.get("papers") or []
+        n_papers = len(papers)
+        first_py = gy - ((n_papers - 1) * (_NODE_H + 20)) // 2 if n_papers else gy
+        for pi, p in enumerate(papers):
+            pid = f"{gid}p{pi}"
+            py = first_py + pi * (_NODE_H + 20)
+            nodes.append(_canvas_node(pid, _paper_text(p), x=paper_x, y=py))
+            if is_ref:
+                edges.append(_canvas_edge(f"e_{pid}_{gid}", pid, gid))
+            else:
+                edges.append(_canvas_edge(f"e_{gid}_{pid}", gid, pid))
+
+
+def build_canvas_json(
+    anchor: dict,
+    ref_groups: list[dict],
+    cite_groups: list[dict],
+) -> dict:
+    """Obsidian Canvas 1.0 spec dict. anchor 중앙, refs 왼쪽, cites 오른쪽."""
     nodes: list[dict] = []
     edges: list[dict] = []
 
-    # anchor: column 0, vertical center.
     anchor_text = (
         f"# {anchor.get('title', 'anchor')}\n"
         f"arXiv:{anchor.get('arxiv_id', '')}  · {anchor.get('year', '?')}\n"
@@ -89,36 +160,7 @@ def build_canvas_json(anchor: dict, groups: list[dict]) -> dict:
         anchor_text += f"  ·  vel {anchor['citation_velocity']:.1f}"
     nodes.append(_canvas_node("anchor", anchor_text, x=0, y=0))
 
-    n_groups = len(groups)
-    # 그룹을 vertically distribute. 중앙 정렬.
-    first_y = -((n_groups - 1) * _GROUP_GAP_Y) // 2 if n_groups else 0
-
-    for gi, g in enumerate(groups):
-        gid = f"g{gi}"
-        gy = first_y + gi * _GROUP_GAP_Y
-        nodes.append(
-            _canvas_node(
-                gid,
-                f"## {g.get('topic', f'group {gi}')}",
-                x=_COL_GAP_X,
-                y=gy,
-            )
-        )
-        edges.append(_canvas_edge(f"e_anchor_{gid}", "anchor", gid))
-
-        papers = g.get("papers") or []
-        # paper들은 그룹 우측에 vertically distribute.
-        n_papers = len(papers)
-        first_py = gy - ((n_papers - 1) * (_NODE_H + 20)) // 2 if n_papers else gy
-        for pi, p in enumerate(papers):
-            pid = f"g{gi}p{pi}"
-            py = first_py + pi * (_NODE_H + 20)
-            ptext = (
-                f"**{p.get('title', 'paper')}**\n"
-                f"arXiv:{p.get('arxiv_id', '')}  · {p.get('year', '?')}\n"
-                f"cited {p.get('citation_count', 0)}"
-            )
-            nodes.append(_canvas_node(pid, ptext, x=2 * _COL_GAP_X, y=py))
-            edges.append(_canvas_edge(f"e_{gid}_{pid}", gid, pid))
+    _place_side(ref_groups, "ref", nodes, edges)
+    _place_side(cite_groups, "cite", nodes, edges)
 
     return {"nodes": nodes, "edges": edges}
