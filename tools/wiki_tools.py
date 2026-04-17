@@ -1,8 +1,10 @@
 """MCP wiki tools — Obsidian vault read/write/list/link.
 
-slug 규약:
-- 단순 식별자 (예: `"2301.12597"`) → `papers/<id>/index.md` (ADR-010 폴더형)
-- `/` 포함 (예: `"topics/vlm"`, `"papers/<id>/index"`) → `<vault>/<slug>.md`
+slug 규약 (ADR-016):
+- arxiv_id 형식 (예: `"2301.12597"`) → frontmatter scan으로 매칭되는
+  `papers/<title-slug>/index.md`. 못 찾으면 `papers/<arxiv_id>/index.md` fallback.
+- 일반 단순 식별자 (예: `"blip-2"`) → `papers/<slug>/index.md`.
+- `/` 포함 (예: `"topics/vlm"`) → `<vault>/<slug>.md`.
 """
 
 from __future__ import annotations
@@ -10,17 +12,30 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from core.slug import is_arxiv_id
 from wiki.frontmatter import dump_note
-from wiki.vault import ensure_vault, paper_note_path, read_note, vault_root, write_note
+from wiki.vault import (
+    ensure_vault,
+    paper_note_path,
+    read_note,
+    resolve_paper_by_arxiv_id,
+    vault_root,
+    write_note,
+)
 
 
 def _resolve_slug(slug: str) -> Path:
     s = slug.strip()
-    if "/" not in s:
-        return paper_note_path(s)
-    if not s.endswith(".md"):
-        s = s + ".md"
-    return vault_root() / s
+    if "/" in s:
+        if not s.endswith(".md"):
+            s = s + ".md"
+        return vault_root() / s
+    if is_arxiv_id(s):
+        # ADR-016: arxiv_id로 title-slug 폴더 lookup.
+        found = resolve_paper_by_arxiv_id(s)
+        if found is not None:
+            return found
+    return paper_note_path(s)
 
 
 def wiki_read_note(slug: str) -> str:

@@ -33,9 +33,9 @@ inputs:
 | 6 | (코드) `analysis.grouping.pack_reference` + `build_classification_prompt` | Claude 입력 패키지 |
 | 7 | (LLM 추론) | refs와 cites **각각 독립적으로** topic + abstract_summary + cited_for 생성 → `ref_groups`, `cite_groups` |
 | 8 | **(승인 게이트)** | 사용자에게 미리보기 표시 후 vault 저장 여부 확인 — 아래 §승인 게이트 |
-| 9 | (승인 시) `wiki_read_note(arxiv_id)` → `wiki_write_note(arxiv_id, frontmatter, body)` | anchor 노트 frontmatter 갱신 |
-| 10 | (승인 시) 각 topic에 `wiki_link(arxiv_id, f"topics/{topic_slug}", note=cited_for)` | wikilink 누적 (D-2) |
-| 11 | `build_citation_canvas(anchor, ref_groups, cite_groups, slug=arxiv_id)` | 시각화 — 승인 여부와 무관하게 항상 산출 |
+| 9 | (승인 시) `wiki_read_note(arxiv_id)` → `wiki_write_note(arxiv_id, frontmatter, body)` | anchor 노트 frontmatter 갱신. `_resolve_slug`가 arxiv_id를 title-slug 폴더로 자동 매핑 (ADR-016). 노트가 없으면 먼저 `paper-ingest`. |
+| 10 | (승인 시) 각 topic에 `wiki_link(arxiv_id, f"topics/{topic_slug}", note=cited_for)` | wikilink 누적 (D-2). source는 arxiv_id 형태 그대로 사용 가능 — _resolve_slug가 매핑. |
+| 11 | `build_citation_canvas(anchor, ref_groups, cite_groups, slug=<title-slug>)` | 시각화 — 승인 여부와 무관하게 항상 산출. `slug`는 vault의 title-slug. anchor frontmatter의 `slug` 필드 또는 `wiki_read_note` 응답에서 추출. |
 
 ## 승인 게이트 (Step 8)
 

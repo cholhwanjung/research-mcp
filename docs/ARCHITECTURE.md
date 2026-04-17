@@ -35,6 +35,7 @@ research-mcp/
 │   ├── http.py                    # aiohttp GET. `_default_headers(url)`로 SS_API_KEY 자동 첨부, RETRY_DELAYS=(1,2,4) 백오프
 │   ├── cache.py                   # 디스크 캐시 (.cache/<sha256>.json). `get_or_fetch(key, fetcher, ttl, force_refresh)`
 │   ├── models.py                  # Paper / CitationEdge / FigureRef (Phase 3.1). frontmatter ↔ in-memory round-trip.
+│   ├── slug.py                    # `slugify_title(title)`, `is_arxiv_id(s)` — ADR-016 vault 명명
 │   └── config.py                  # vault/PDF/CACHE 경로 env, SS_API_KEY env
 │
 ├── sources/
@@ -49,10 +50,12 @@ research-mcp/
 │   └── viz.py                     # `build_mermaid(anchor, ref_groups, cite_groups, direction)` + `build_canvas_json(anchor, ref_groups, cite_groups)` — refs → anchor → cites 흐름 (ADR-005, ADR-014)
 │
 ├── wiki/
-│   ├── vault.py                   # Obsidian vault read/write
+│   ├── vault.py                   # Obsidian vault read/write + `resolve_paper_by_arxiv_id` (ADR-016)
 │   ├── frontmatter.py             # YAML schema 검증
 │   ├── linker.py                  # [[wikilink]] 추출 + `read_vault_notes()` + `vault_backlinks(target)` (D-2 자동 백링크)
-│   └── figures.py                 # pymupdf로 figure + caption 추출 (ADR-010)
+│   ├── figures.py                 # figure 추출 — vision bbox + clip (ADR-010, ADR-015, ADR-019)
+│   ├── tables.py                  # table 추출 — vision bbox + clip (ADR-019)
+│   └── vision.py                  # Gemini bbox 추정 (ADR-019). `estimate_bbox(page_png, caption, page_w, page_h, kind)`
 │
 ├── tools/                         # MCP tool 정의 (얇은 wrapper)
 │   ├── search_tools.py
@@ -93,7 +96,7 @@ research-mcp/
 |---|---|
 | **fetch** | `search_papers`, `get_paper_by_id`, `get_recommended_papers`, `get_hf_daily_papers`, `get_citation_contexts` |
 | **graph** | `get_references_by_citations`, `get_citations_by_citations` |
-| **artifact** | `download_paper`, `read_paper`, `extract_paper_figures` |
+| **artifact** | `download_paper`, `read_paper`, `extract_paper_figures`, `prune_paper_figures`, `extract_paper_tables`, `prune_paper_tables`, `render_paper_page` |
 | **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_link` |
 | **viz** | `build_citation_canvas` |
 
@@ -111,7 +114,11 @@ research-mcp/
 | `get_citation_contexts` | **신규(3.2)** | 특정 인용의 본문 문맥 (ADR-009 입력). `(citing_id, cited_id)` → snippets[] |
 | `get_recommended_papers` | **신규(3.2, D-4)** | SS Recommendations API. `(paper_id, k=10)` → 콘텐츠 유사 추천. 워크플로우 자동 편입 보류. |
 | `wiki_read_note` / `wiki_write_note` / `wiki_list` / `wiki_link` | **신규(2.4)** | Obsidian vault CRUD. slug 단순 식별자는 `papers/<id>/index.md` 자동 매핑 |
-| `extract_paper_figures` | **신규(2.4)** | 캐시된 PDF에서 figure 추출 → `papers/<id>/figures/fig_<n>.png` (ADR-010) |
+| `extract_paper_figures` | **변경(ADR-019)** | Gemini Vision으로 bbox 추정 후 clip. 파일명 `fig_<N>_<caption-slug>.png`. |
+| `prune_paper_figures` | **변경(ADR-018)** | LLM이 caption으로 선별한 `keep` 리스트 외 figure 삭제. 파일명이 `fig_<n>.png`로 단순해져 input 간결. |
+| `extract_paper_tables` | **변경(ADR-019)** | Gemini Vision으로 bbox 추정 후 clip. 파일명 `table_<N>_<caption-slug>.png`. |
+| `prune_paper_tables` | **신규(ADR-018)** | table 버전의 prune. |
+| `render_paper_page` | **신규(ADR-018, 옵션)** | 페이지를 통째로 PNG로 렌더 → `papers/<slug>/pages/page_<n>.png`. ColPali 스타일 보조 도구, 자동 호출 안 함. |
 | `build_citation_canvas` | **변경(ADR-014)** | `(anchor, ref_groups, cite_groups)` 시그니처. refs → anchor → cites 인과 흐름. Mermaid 응답 + `vault/canvases/<slug>.canvas` 저장 (ADR-005, ADR-014). |
 
 ---
@@ -134,16 +141,21 @@ research-mcp/
 
 ## 5. 데이터 모델
 
-### 5.1 `papers/<arxiv_id>/index.md` (Obsidian, 폴더형)
-[ADR-010](ADR.md#adr-010) 폴더형 레이아웃 — 한 논문 = 한 폴더. 인용 분석은 [ADR-009](ADR.md#adr-009) 동적 토픽.
+### 5.1 `papers/<title-slug>/index.md` (Obsidian, 폴더형)
+[ADR-010](ADR.md#adr-010) 폴더형 + [ADR-016](ADR.md#adr-016) title-slug 명명. 한 논문 = 한 폴더. arxiv_id는 frontmatter 식별자. 인용 분석은 [ADR-009](ADR.md#adr-009) 동적 토픽.
 
 ```
-vault/papers/2301.12597/
-  index.md
-  figures/
+vault/papers/blip-2/
+  index.md          # frontmatter에 arxiv_id, slug, ss_paper_id 보존
+  figures/          # ADR-018: 영역 crop, 한 figure = 한 PNG
     fig_1.png
     fig_2.png
     ...
+  tables/           # ADR-018: caption 기준 영역 crop
+    table_1.png
+    ...
+  pages/            # ADR-018 옵션: render_paper_page 호출 시
+    page_<n>.png
 ```
 
 `index.md` frontmatter:
