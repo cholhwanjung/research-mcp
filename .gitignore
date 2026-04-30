@@ -21,3 +21,7 @@ sources/swagger.json
 # API keys — 실험 스크립트 + research-mcp 본체에서 사용
 .env
 .env.local
+
+CLAUDE.md
+docs/
+.claude/

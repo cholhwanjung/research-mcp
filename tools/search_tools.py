@@ -6,11 +6,11 @@ import urllib.parse
 from datetime import datetime, timezone
 
 from analysis.format import fmt_paper as _fmt_paper
+from core.filter import drop_surveys as _drop_surveys
 from core.http import get as _get
 from sources.arxiv import parse_arxiv as _parse_arxiv
 from sources.semantic_scholar import (
     SS_BASE,
-    recommend_for_paper as _recommend_for_paper,
     resolve_id as _resolve_id,
     ss_get as _ss_get,
 )
@@ -49,6 +49,8 @@ async def search_papers(
         return "❌ arXiv API 응답 오류"
 
     papers = _parse_arxiv(xml)
+    # ADR-021: title에 \bsurvey\b 포함된 논문은 워크플로우에서 의미 없음 → 제외.
+    papers = _drop_surveys(papers)
     if not papers:
         return f"'{query}'에 대한 검색 결과가 없습니다."
 
@@ -139,27 +141,6 @@ async def get_paper_by_id(paper_id: str) -> str:
     return "\n".join(lines)
 
 
-async def get_recommended_papers(paper_id: str, k: int = 10) -> str:
-    """Semantic Scholar의 콘텐츠 유사도 기반 추천 논문 k건을 반환합니다.
-
-    인용 그래프와는 별개의 신호 (D-4) — 새 토픽 탐색·관련 분야 발견에 적합.
-    현재 워크플로우(citation 중심)에는 자동 편입되지 않습니다.
-
-    Args:
-        paper_id: arXiv ID (예: "2301.12597"), DOI, 또는 Semantic Scholar ID.
-        k:        추천 논문 수 (기본 10).
-    """
-    papers = await _recommend_for_paper(paper_id, k)
-    if not papers:
-        return f"❌ 추천 결과 없음: {paper_id} (SS Recommendations API 미수집 가능)"
-
-    lines = [f"💡 '{paper_id}'와 유사한 추천 논문 ({len(papers)}편)\n"]
-    for i, p in enumerate(papers, 1):
-        lines.append(f"[{i}] {_fmt_paper(p)}\n")
-    return "\n".join(lines)
-
-
 def register(mcp) -> None:
     mcp.tool()(search_papers)
     mcp.tool()(get_paper_by_id)
-    mcp.tool()(get_recommended_papers)

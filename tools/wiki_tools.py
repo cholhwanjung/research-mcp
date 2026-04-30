@@ -16,6 +16,7 @@ from core.slug import is_arxiv_id
 from wiki.frontmatter import dump_note
 from wiki.vault import (
     ensure_vault,
+    paper_dir,
     paper_note_path,
     read_note,
     resolve_paper_by_arxiv_id,
@@ -35,7 +36,13 @@ def _resolve_slug(slug: str) -> Path:
         found = resolve_paper_by_arxiv_id(s)
         if found is not None:
             return found
-    return paper_note_path(s)
+    # ADR-023: <slug>.md 우선. legacy index.md backward compat.
+    path = paper_note_path(s)
+    if not path.is_file():
+        legacy = paper_dir(s) / "index.md"
+        if legacy.is_file():
+            return legacy
+    return path
 
 
 def wiki_read_note(slug: str) -> str:
@@ -90,6 +97,39 @@ def wiki_list(prefix: str = "papers") -> str:
     return f"📚 {prefix} ({len(items)})\n" + "\n".join(f"  - {i}" for i in items)
 
 
+def wiki_list_hubs() -> str:
+    """vault `topics/*.md` 중 frontmatter `tier: hub`인 안정 hub 목록 + 메타 (ADR-022).
+
+    citation-analysis SKILL의 hub matching step에서 LLM이 자유 토픽 생성 대신
+    기존 hub 매칭을 시도할 때 사용. 응답에 slug · title · aliases · parent · related · summary
+    포함.
+    """
+    from wiki.vault import list_hubs as _list_hubs
+
+    ensure_vault()
+    hubs = _list_hubs()
+    if not hubs:
+        return "(hub 없음 — topics/*.md에 `tier: hub` 노트가 아직 없음)"
+    lines = [f"🏷️ Hubs ({len(hubs)})\n"]
+    for h in hubs:
+        line = f"- [[{h['slug']}]]"
+        if h["title"] and h["title"] != h["slug"]:
+            line += f" ({h['title']})"
+        if h["summary"]:
+            line += f" — {h['summary']}"
+        lines.append(line)
+        meta = []
+        if h["aliases"]:
+            meta.append(f"aliases: {', '.join(h['aliases'])}")
+        if h["parent"]:
+            meta.append(f"parent: {h['parent']}")
+        if h["related"]:
+            meta.append(f"related: {', '.join(h['related'])}")
+        if meta:
+            lines.append(f"    {' | '.join(meta)}")
+    return "\n".join(lines)
+
+
 def wiki_link(source: str, target: str, note: str = "") -> str:
     """source 노트 본문 끝에 `- [[target]]` 라인 추가. 중복이면 skip.
 
@@ -112,5 +152,6 @@ def wiki_link(source: str, target: str, note: str = "") -> str:
 def register(mcp) -> None:
     mcp.tool()(wiki_read_note)
     mcp.tool()(wiki_write_note)
+    mcp.tool()(wiki_list_hubs)
     mcp.tool()(wiki_list)
     mcp.tool()(wiki_link)

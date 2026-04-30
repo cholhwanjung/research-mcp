@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from core import config
+from wiki.frontmatter import parse_note
 
 _STANDARD_SUBDIRS = ("papers", "topics", "digests", "_meta")
 # frontmatter의 arxiv_id를 quote 유무 모두 매칭.
@@ -35,7 +36,10 @@ def paper_dir(slug: str) -> Path:
 
 
 def paper_note_path(slug: str) -> Path:
-    return paper_dir(slug) / "index.md"
+    """ADR-023: 파일명을 폴더 slug와 동일하게 — Obsidian graph view에서
+    노드 텍스트가 'index'가 아닌 사람-가독 slug로 표시되게.
+    """
+    return paper_dir(slug) / f"{slug}.md"
 
 
 def read_note(path: Path) -> str:
@@ -54,22 +58,60 @@ def list_papers() -> list[str]:
     return sorted(p.name for p in base.iterdir() if p.is_dir())
 
 
-def resolve_paper_by_arxiv_id(arxiv_id: str) -> Path | None:
-    """vault `papers/*/index.md`의 frontmatter에서 `arxiv_id`로 노트를 찾는다 (ADR-016).
+def list_hubs() -> list[dict]:
+    """vault `topics/*.md`의 frontmatter에서 `tier: hub`인 노트의 메타를 반환 (ADR-022).
 
-    title-slug 폴더 명명 도입 후 외부 호출자(citation-analysis 등)가 arxiv_id로
-    노트 위치를 찾을 때 사용. 못 찾으면 None.
+    각 항목 dict 키: `slug` (파일명, 확장자 제외), `title`, `aliases`, `parent`,
+    `related`, `summary`. 누락된 필드는 안전한 기본값 (`title`은 slug fallback).
+
+    citation-analysis SKILL의 step 7' (LLM hub matching)에서 사용.
+    """
+    base = vault_root() / "topics"
+    if not base.is_dir():
+        return []
+    hubs: list[dict] = []
+    for path in sorted(base.glob("*.md")):
+        try:
+            fm, _body = parse_note(path.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            continue
+        if not isinstance(fm, dict) or fm.get("tier") != "hub":
+            continue
+        slug = path.stem
+        hubs.append(
+            {
+                "slug": slug,
+                "title": fm.get("title") or slug,
+                "aliases": list(fm.get("aliases") or []),
+                "parent": fm.get("parent"),
+                "related": list(fm.get("related") or []),
+                "summary": fm.get("summary") or "",
+            }
+        )
+    return hubs
+
+
+def resolve_paper_by_arxiv_id(arxiv_id: str) -> Path | None:
+    """vault `papers/<slug>/<slug>.md` (ADR-023) 또는 legacy `index.md` (ADR-010)의
+    frontmatter에서 `arxiv_id`로 노트를 찾는다.
+
+    파일명 우선순위: `<slug>.md` → `index.md` (backward compat).
+    못 찾으면 None.
     """
     base = vault_root() / "papers"
     if not base.is_dir():
         return None
     target = arxiv_id.strip()
     for paper in base.iterdir():
-        idx = paper / "index.md"
-        if not idx.is_file():
+        if not paper.is_dir():
             continue
-        text = idx.read_text(encoding="utf-8", errors="ignore")
-        m = _ARXIV_LINE_RE.search(text)
-        if m and m.group(1).strip() == target:
-            return idx
+        # ADR-023: <slug>.md 우선, legacy index.md fallback.
+        candidates = [paper / f"{paper.name}.md", paper / "index.md"]
+        for cand in candidates:
+            if not cand.is_file():
+                continue
+            text = cand.read_text(encoding="utf-8", errors="ignore")
+            m = _ARXIV_LINE_RE.search(text)
+            if m and m.group(1).strip() == target:
+                return cand
     return None

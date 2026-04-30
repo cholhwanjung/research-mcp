@@ -11,10 +11,10 @@ import json
 import re
 
 from core import cache
+from core.filter import is_survey
 from core.http import get
 
 SS_BASE = "https://api.semanticscholar.org/graph/v1/paper"
-SS_REC_BASE = "https://api.semanticscholar.org/recommendations/v1"
 SS_CACHE_TTL = 7 * 24 * 3600  # 1주일 — citation count는 자주 안 변함
 
 
@@ -101,6 +101,9 @@ async def fetch_network_papers(
             paper = entry.get(item_key) or {}
             if not paper.get("title"):
                 continue
+            # ADR-021: title에 \bsurvey\b 포함된 논문은 제외.
+            if is_survey(paper.get("title")):
+                continue
             # entry wrapper의 isInfluential을 paper dict로 주입 (없으면 False).
             paper["is_influential"] = bool(entry.get("isInfluential", False))
             items.append(paper)
@@ -164,17 +167,3 @@ def _cited_identifiers(cited_id: str) -> tuple[str | None, str | None]:
         return rid, None
     # DOI 등 — paperId 매칭은 못 함. ArXiv 추정도 못 함.
     return None, None
-
-
-_REC_FIELDS = "title,authors,year,citationCount,externalIds,url,venue"
-
-
-async def recommend_for_paper(paper_id: str, k: int = 10) -> list[dict]:
-    """SS Recommendations API: 콘텐츠 유사도 기반 추천 논문 k건. 인용 그래프와 별개 (D-4)."""
-    rid = resolve_id(paper_id)
-    url = f"{SS_REC_BASE}/papers/forpaper/{rid}"
-    params = {"limit": str(k), "fields": _REC_FIELDS}
-    resp = await ss_get(url, params)
-    if not isinstance(resp, dict):
-        return []
-    return list(resp.get("recommendedPapers") or [])

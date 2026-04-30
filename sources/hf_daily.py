@@ -16,6 +16,7 @@ import re
 from datetime import datetime, timezone
 
 from core import cache
+from core.filter import drop_surveys
 from core.http import get
 
 _API_BASE = "https://huggingface.co/api/daily_papers"
@@ -113,6 +114,8 @@ async def fetch_daily_papers(date: str | None = None, limit: int = 0) -> list[di
             papers = await _fetch_html(date)
         except Exception:
             papers = []
+    # ADR-021: survey 논문은 사용자 워크플로우에서 의미 없음 → 제외.
+    papers = drop_surveys(papers)
     if limit and limit > 0:
         papers = papers[:limit]
     return papers

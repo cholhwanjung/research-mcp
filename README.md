@@ -20,8 +20,8 @@
 한 번 ingest한 논문은 폴더형 구조로 vault에 저장된다.
 
 ```
-vault/papers/2301.12597/
-├── index.md          # frontmatter + TL;DR / Methods / Findings / References
+vault/papers/blip-2/
+├── blip-2.md         # frontmatter + TL;DR / Methods / Findings / References (ADR-023: 파일명 = 폴더 slug)
 └── figures/
     ├── fig_1.png     # PDF에서 자동 추출된 raster figure
     ├── fig_2.png
@@ -52,14 +52,14 @@ graph LR
 
 ---
 
-## MCP Tool 카탈로그 (16개)
+## MCP Tool 카탈로그
 
 | 카테고리 | Tool |
 |---|---|
-| **fetch** | `search_papers`, `get_paper_by_id`, `get_recommended_papers`, `get_hf_daily_papers`, `get_citation_contexts` |
+| **fetch** | `search_papers`, `get_paper_by_id`, `get_hf_daily_papers`, `get_citation_contexts` |
 | **graph** | `get_references_by_citations`, `get_citations_by_citations` |
-| **artifact** | `download_paper`, `read_paper`, `extract_paper_figures` |
-| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_link` |
+| **artifact** | `download_paper`, `read_paper`, `extract_paper_figures`, `extract_paper_tables`, `prune_paper_figures`, `prune_paper_tables`, `render_paper_page` |
+| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_link` |
 | **viz** | `build_citation_canvas` |
 
 각 tool은 한 카테고리에만 속하도록 직교적으로 설계되어 있다 — 호출 순서를 가진 워크플로우는 아래 *스킬* 로 묶인다.
@@ -72,9 +72,8 @@ Claude Desktop에서 자연어 한 줄로 호출 가능한 사전 정의 워크�
 
 | 스킬 | 트리거 예시 | 하는 일 |
 |---|---|---|
-| `research-flow` | "VLM 흐름 보여줘", "<arxiv_id> 인용 그래프" | anchor 1편을 중심으로 references·citations를 velocity 순 정렬, 동적 토픽 그룹핑, Mermaid + Canvas 산출 |
 | `paper-ingest` | "이 논문 ingest", "BLIP-2 위키에 추가" | 메타·PDF·figure·요약을 한 번에 vault에 누적 |
-| `citation-analysis` | "<arxiv_id> 인용 분석" | references / cited_by의 각 항목에 *topic* + *cited_for* (왜 인용했는가) 를 채워 노트에 영구 저장 |
+| `citation-analysis` | "BLIP-2 흐름 보여줘", "<arxiv_id> 인용 분석" | anchor 1편 중심으로 refs/cites 동적 토픽 + cited_for 채우기 + 시각화. vault 영구 누적은 사용자 승인 게이트. |
 | `daily-digest` | "오늘 트렌딩 논문", "daily digest" | HF Daily를 받아 `digests/<date>.md` 에 정리, 오늘의 흐름 3-5줄 요약 작성 |
 
 ---
@@ -134,8 +133,8 @@ uv sync
 ```
 vault/
 ├── papers/
-│   └── <arxiv_id>/
-│       ├── index.md         # frontmatter + 본문 (TL;DR / Methods / Findings / References)
+│   └── <title-slug>/
+│       ├── <title-slug>.md  # frontmatter + 본문 (TL;DR / Methods / Findings / References)
 │       └── figures/
 │           └── fig_<n>.png
 ├── topics/
@@ -148,7 +147,7 @@ vault/
     └── <arxiv_id>.pdf
 ```
 
-`papers/<id>/index.md` frontmatter 예:
+`papers/<title-slug>/<title-slug>.md` frontmatter 예:
 
 ```yaml
 arxiv_id: 2301.12597
@@ -173,17 +172,15 @@ figures:
 Claude Desktop에서:
 
 ```
-> VLM 분야 최근 흐름 보여줘
-→ research-flow 스킬 발동 → Mermaid 그래프 + canvases/2301.12597.canvas 저장
-
 > BLIP-2 위키에 추가해줘
-→ paper-ingest 스킬 발동 → papers/2301.12597/ 폴더 생성, figure 12개 추출
+→ paper-ingest 스킬 발동 → papers/blip-2/ 폴더 생성, figure·table 추출
 
-> 이 논문의 인용 흐름을 분석해줘
-→ citation-analysis 스킬 발동 → references 20편 각각에 topic + cited_for 채움
+> BLIP-2 흐름 보여줘
+→ citation-analysis 스킬 발동 → refs/cites 동적 토픽 + cited_for 채움
+  → 사용자 승인 게이트 → vault 영구 누적 + Mermaid·Canvas 시각화
 
 > 오늘 트렌딩 논문 정리해줘
-→ daily-digest 스킬 발동 → digests/2026-06-04.md 저장
+→ daily-digest 스킬 발동 → digests/2026-06-07.md 저장
 ```
 
 ---
