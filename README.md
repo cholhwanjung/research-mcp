@@ -1,8 +1,20 @@
 # Research MCP
 
-> 개인용 연구 에이전트 — Claude Desktop에서 arXiv 검색·인용 그래프·논문 위키·시각화를 한 줄 자연어로 실행한다.
+> 개인용 연구 에이전트 — arXiv 검색·인용 그래프·멀티모달 논문 위키·시각화를 자연어 한 줄로 실행.
+> **Claude Desktop (MCP)** 과 **self-hosted 웹 채팅 앱** 두 가지 인터페이스 사용.
 
-논문을 한 번 보면 PDF·figure·요약이 로컬 Obsidian vault에 누적되고, 다음에 같은 주제를 물을 때는 네트워크 호출 없이 vault에서 바로 인용된다. **"한 번 본 논문은 영원히 누적되고, 한 주제의 연구 흐름은 한 장의 그림으로 본다"** 가 목표다.
+---
+
+## 프로젝트 구조
+
+같은 도구·스킬·vault를 두 경로로 노출 — 비즈니스 로직(`sources/`·`analysis/`·`wiki/`·`tools/`)은 한 곳에 두고, 두 진입점이 같은 함수를 다른 transport로 wrap.
+
+| | Claude Desktop (MCP) | 웹 채팅 앱 (self-hosted) |
+|---|---|---|
+| 진입 | `server.py` — FastMCP, stdio | `web/` (Next.js) → `api/` (FastAPI + SSE) → `agent/` (Pydantic-AI) |
+| 모델 | Claude | Claude / GPT / Gemini 선택 |
+| 시각화 | Mermaid + Obsidian | Obsidian |
+| 브랜치 | `main` | `web-app` |
 
 ---
 
@@ -12,47 +24,62 @@
 - **arXiv 검색** — 키워드/카테고리로 검색하고 결과를 *최근 1년 / 3년 / 5년 / 그 이상* 으로 자동 분류.
 - **인용 그래프** — 특정 논문의 references / citations를 가져와 정렬.
   - `sort="count"` — 절대 인용수 순.
-  - `sort="velocity"` — **citation velocity** (`citations / (현재연도 − 발행연도)`) 순. 오래된 논문이 절대 인용수만으로 항상 이기는 문제를 보정해, 최신 흐름에 가까운 결과를 보여준다.
+  - `sort="velocity"` — **citation velocity** (`citations / (현재연도 − 발행연도)`) 순. 오래된 논문이 절대 인용수만으로 항상 이기는 문제를 보정해 최신 흐름에 가까운 결과를 보여준다.
 - **인용 문맥 (citation contexts)** — Semantic Scholar의 `contexts` API로 *왜 인용했는지* 본문 스니펫을 수집.
-- **유사 논문 추천** — Semantic Scholar Recommendations API 기반, 인용 그래프와는 별개의 신호로 새 토픽 탐색에 적합.
 
 ### 2. 멀티모달 논문 위키 (Obsidian vault)
 한 번 ingest한 논문은 폴더형 구조로 vault에 저장된다.
 
 ```
 vault/papers/blip-2/
-├── blip-2.md         # frontmatter + TL;DR / Methods / Findings / References (ADR-023: 파일명 = 폴더 slug)
+├── blip-2.md         # frontmatter + TL;DR / Methods / Findings / References (파일명 = 폴더 slug)
 └── figures/
-    ├── fig_1.png     # PDF에서 자동 추출된 raster figure
-    ├── fig_2.png
+    ├── fig_1_overview-of-blip-2s-framework.png
+    ├── fig_2_q-former-architecture.png
     └── ...
 ```
 
 - **PDF 원본 보관** — `vault/pdfs/<arxiv_id>.pdf` 에 영구 저장. 동일 ID 재요청 시 다운로드 skip.
-- **figure 추출** — PyMuPDF로 PDF 내 모든 raster figure를 추출하고 caption과 매칭. 노트 본문에서 `![[figures/fig_1.png]]` 로 임베드되어, 다음 세션에서 Claude가 시각 정보를 다시 참조할 수 있다.
-- **동적 토픽 분류** — references / cited_by를 고정 카테고리(model/data/method 등)가 아닌 **자유 문자열 토픽 태그**로 분류한다 (예: `"frozen visual encoder reuse"`, `"Q-Former 후속 변형"`). 인용 문맥 + 인용된 논문 초록을 결합해 LLM이 생성.
-- **양방향 wikilink + MOC** — `[[2106.04560-CLIP]]` 같은 wikilink가 자동으로 누적되어, `topics/<slug>.md` MOC(Map of Content) 노트에 백링크로 자연 집계된다.
+- **Vision 기반 figure / table 추출** — Gemini Vision으로 figure·table 영역을 crop한다. *(`GOOGLE_API_KEY` 필요)*
+- **안정 hub 분류** — 큐레이트된 **hub 노트**(e.g. `topics/*.md` — `LLM`, `VLM`, `Diffusion`, `Agent-Reasoning`)에 1–3개로 매핑.
+- **양방향 wikilink** — `[[clip]]` 같은 wikilink가 자동 누적.
 
-### 3. 시각화: Mermaid + Obsidian Canvas
-한 anchor 논문을 중심으로 인용 흐름을 *카드 그래프* 로 출력한다. 두 형식이 동시에 산출된다.
+### 3. 시각화: Mermaid + Obsidian
+한 anchor 논문을 중심으로 인용 흐름을 *카드 그래프* 로 출력.
 
 - **Mermaid graph** — 응답에 즉시 임베드되어 Claude Desktop / GitHub / Obsidian이 그대로 렌더.
-- **Obsidian Canvas JSON** (`vault/canvases/<slug>.canvas`) — 사용자가 옵시디언에서 카드를 자유 배치 가능한 1.0 spec.
+- **Obsidian Canvas JSON** (`vault/canvases/<slug>.canvas`) — 옵시디언에서 카드를 자유 배치 가능한 1.0 spec.
 
 ```mermaid
 graph LR
   anchor["BLIP-2 (2023, cited 1234)"]
-  anchor --> g1[frozen visual encoder reuse]
-  anchor --> g2[Q-Former 후속 변형]
-  g1 --> p1["CLIP (2021)"]
+  refs["CLIP (2021)"] --> anchor
+  anchor --> cite1["LLaVA (2023)"]
+  anchor --> cite2["InstructBLIP (2023)"]
 ```
 
 ### 4. 일일 인기 논문 피드
-- **Hugging Face Daily Papers** — 하루 단위 인기 논문을 받아 upvote 순으로 정렬. `daily-digest` 스킬로 `digests/<YYYY-MM-DD>.md` 노트에 자동 누적.
+- **Hugging Face Daily Papers** — 하루 단위 인기 논문을 upvote 순으로 정렬. `daily-digest` 스킬로 `digests/<YYYY-MM-DD>.md` 노트에 자동 누적.
 
 ---
 
-## MCP Tool 카탈로그
+## 아키텍처
+
+```
+sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py            (Claude Desktop · MCP)
+ (fetch)     (rank/group)  (vault)  (19 tool)  │
+                                               └─  agent/ → api/ → web/  (웹 앱 · SSE 채팅)
+```
+
+- **단방향 import** — 위 화살표 방향으로만 의존. 역방향 금지.
+- **tool은 한 곳에 정의** — `tools/*.py`의 함수를 MCP(`server.py`)와 에이전트(`agent/`)가 동일하게 재사용한다. 같은 19개 도구가 두 transport로 노출된다.
+- **에이전트** — Pydantic-AI. provider-prefixed 모델 문자열(`anthropic:` / `openai:` / `google-gla:`)로 멀티 provider 전환. 스킬 정의를 system prompt로 로드.
+
+---
+
+## MCP Tool 카탈로그 (19)
+
+각 tool은 한 카테고리에만 속하도록 직교적으로 설계 — 호출 순서를 가진 워크플로우는 아래 *스킬* 로 묶인다.
 
 | 카테고리 | Tool |
 |---|---|
@@ -62,19 +89,17 @@ graph LR
 | **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_link` |
 | **viz** | `build_citation_canvas` |
 
-각 tool은 한 카테고리에만 속하도록 직교적으로 설계되어 있다 — 호출 순서를 가진 워크플로우는 아래 *스킬* 로 묶인다.
-
 ---
 
 ## 스킬 (워크플로우)
 
-Claude Desktop에서 자연어 한 줄로 호출 가능한 사전 정의 워크플로우들.
+자연어 한 줄로 호출 가능한 사전 정의 워크플로우 (도구 호출 시퀀스).
 
 | 스킬 | 트리거 예시 | 하는 일 |
 |---|---|---|
-| `paper-ingest` | "이 논문 ingest", "BLIP-2 위키에 추가" | 메타·PDF·figure·요약을 한 번에 vault에 누적 |
-| `citation-analysis` | "BLIP-2 흐름 보여줘", "<arxiv_id> 인용 분석" | anchor 1편 중심으로 refs/cites 동적 토픽 + cited_for 채우기 + 시각화. vault 영구 누적은 사용자 승인 게이트. |
-| `daily-digest` | "오늘 트렌딩 논문", "daily digest" | HF Daily를 받아 `digests/<date>.md` 에 정리, 오늘의 흐름 3-5줄 요약 작성 |
+| `paper-ingest` | "이 논문 ingest", "BLIP-2 위키에 추가" | 메타·PDF·figure·table·요약을 한 번에 vault에 누적. 분야를 기존 hub에 매핑. |
+| `citation-analysis` | "BLIP-2 흐름 보여줘", "<arxiv_id> 인용 분석" | anchor 1편 중심으로 refs/cites를 hub로 분류 + `cited_for` 채우기 + 시각화. vault 영구 누적은 사용자 승인 게이트. |
+| `daily-digest` | "오늘 트렌딩 논문", "daily digest" | HF Daily를 받아 `digests/<date>.md` 에 정리, 오늘의 흐름 요약. |
 
 ---
 
@@ -83,9 +108,8 @@ Claude Desktop에서 자연어 한 줄로 호출 가능한 사전 정의 워크�
 ### 요구사항
 - Python `>=3.10`
 - [uv](https://github.com/astral-sh/uv) (의존성 관리)
-- Obsidian (vault를 보기 위해, 필수는 아님)
+- Obsidian (vault·그래프를 보기 위해 — 권장)
 
-### 의존성 설치
 ```bash
 uv sync
 ```
@@ -101,6 +125,7 @@ uv sync
       "args": ["--directory", "/path/to/research-mcp", "run", "python", "server.py"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/Users/you/Documents/research-wiki",
+        "GOOGLE_API_KEY": "<Gemini Vision — figure/table 추출용>",
         "SS_API_KEY": "<optional Semantic Scholar API key>"
       }
     }
@@ -108,23 +133,65 @@ uv sync
 }
 ```
 
-### 환경 변수
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `OBSIDIAN_VAULT_PATH` | `~/Documents/research-wiki` | 노트·PDF·figure가 저장될 vault 루트 |
+| `OBSIDIAN_VAULT_PATH` | `~/Documents/research-wiki` | 노트·PDF·figure 저장 vault 루트 |
 | `PDF_PATH` | `$OBSIDIAN_VAULT_PATH/pdfs` | PDF 원본 저장 위치 |
-| `CACHE_DIR` | `./.cache` | 외부 API 응답 디스크 캐시 |
-| `SS_API_KEY` | (없음) | Semantic Scholar API key. 설정 시 429 rate-limit 완화 |
+| `GOOGLE_API_KEY` | (없음) | Gemini Vision — figure/table bbox 추정에 필요 |
+| `SS_API_KEY` | (없음) | Semantic Scholar API key. 설정 시 rate-limit 완화 |
 
 ---
 
-## 데이터 소스
+## 웹 앱 (self-hosted) — 멀티 LLM 채팅
 
-- **arXiv** — 검색 + 원본 PDF 다운로드
-- **Semantic Scholar** — citation graph, citation contexts, 추천
-- **Hugging Face Daily Papers** — 일일 인기 논문 (비공식 JSON API → HTML fallback)
+Claude Desktop 외에, 같은 도구·워크플로우를 **웹 채팅 UI**로도 쓸 수 있음.
 
-모든 외부 응답은 디스크 캐시를 거치므로 동일 paper_id 재요청은 0 네트워크 비용.
+### 구성
+- `api/` — FastAPI + SSE 백엔드. `/chat`(스트리밍) · `/skills` · `/health`. Bearer 토큰 인증(옵션).
+- `agent/` — Pydantic-AI 에이전트. MCP의 19개 tool을 그대로 재사용 + multi-provider.
+- `web/` — Next.js 채팅 프론트 (스트리밍 + 모델 선택기 + 토큰 입력).
+
+### 실행 — 한 번에 (로컬, 추천)
+```bash
+cp .env.example .env       # 쓸 provider 키만 채우기 (예: GOOGLE_API_KEY)
+./run-web.sh               # .env 의 RESEARCH_MODEL (미설정 시 Claude)
+./run-web.sh google        # Gemini  — GOOGLE_API_KEY 만 있으면 됨 (Anthropic 키 불필요)
+./run-web.sh openai        # GPT-4o  — OPENAI_API_KEY
+./run-web.sh anthropic     # Claude  — ANTHROPIC_API_KEY
+```
+→ 백엔드(:8000)+프론트(:3000) 동시 기동. 접속: **http://localhost:3000**
+- 인자로 고른 모델이 백엔드 기본값(`RESEARCH_MODEL`)으로 적용 (웹 UI에서 메시지별 전환도 가능). `provider:model` 직접 지정도 됨 (예: `./run-web.sh google:gemini-2.0-flash`).
+- 선택한 provider 키가 없으면 **부팅 전에 안내하고 멈춤** (lifespan 에러 회피).
+- Ctrl-C 한 번으로 둘 다 종료. 최초 1회 `uv sync`·`npm install` 자동, Docker 불필요.
+- `.env`는 백엔드(`core/config.py`)가 자동 로드, 프론트 기본 API_URL은 `http://localhost:8000`.
+
+**사용**: 우상단 토큰칸에 `RESEARCH_API_TOKEN` 값 입력(설정 시) → 채팅. 예: `"BLIP-2 위키에 추가해줘"` → 채팅에 tool 실행 흐름 표시 → **Obsidian을 열어** 노트·그래프 확인.
+
+### 실행 — Docker (self-hosted 배포)
+```bash
+cp .env.example .env        # provider 키 + VAULT_HOST_PATH 채우기
+docker compose up --build   # 백엔드 → http://localhost:8000
+```
+- `VAULT_HOST_PATH`는 **Docker 파일공유 대상 경로**여야 한다 (홈 하위 `~/Documents/...`는 기본 공유됨; `/tmp` 등은 공유 안 될 수 있어 컨테이너가 안 뜬다).
+- 세션 SQLite는 named volume(`sessions`)에 저장 — vault 바인드마운트와 분리해 안정성 확보.
+- 프론트는 컨테이너에 없음 → 아래 "수동 실행"의 프론트 명령으로 별도 기동.
+
+### 수동 실행 (개별 기동, 선택)
+`run-web.sh` 대신 백엔드·프론트를 따로 띄울 때:
+```bash
+uv run uvicorn api.main:create_app --factory --port 8000   # 백엔드
+cd web && npm run dev                                       # 프론트(:3000)
+```
+백엔드를 비표준 호스트/포트로 띄우면 `web/.env.local`에 `NEXT_PUBLIC_API_URL=…` 지정.
+
+### 환경 변수 (웹 앱)
+| 변수 | 설명 |
+|---|---|
+| `RESEARCH_API_TOKEN` | 설정 시 API 호출에 `Authorization: Bearer` 강제 (비우면 인증 off) |
+| `RESEARCH_MODEL` | 기본 채팅 모델 (`anthropic:…` / `openai:…` / `google-gla:…`) |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | 사용할 provider 키 |
+| `GOOGLE_API_KEY` | Gemini Vision — figure/table 추출 (ingest 시) |
+| `VAULT_HOST_PATH` | (compose) host vault 절대경로 → 컨테이너 `/vault` |
 
 ---
 
@@ -136,9 +203,9 @@ vault/
 │   └── <title-slug>/
 │       ├── <title-slug>.md  # frontmatter + 본문 (TL;DR / Methods / Findings / References)
 │       └── figures/
-│           └── fig_<n>.png
+│           └── fig_<n>_<caption-slug>.png
 ├── topics/
-│   └── <slug>.md            # MOC — 백링크로 자동 집계되는 토픽 인덱스
+│   └── <hub-slug>.md        # 안정 hub — 백링크로 논문이 자동 집계
 ├── digests/
 │   └── <YYYY-MM-DD>.md      # 일일 HF Daily 노트
 ├── canvases/
@@ -155,32 +222,45 @@ title: "BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Enco
 year: 2023
 citation_count: 1234
 citation_velocity: 411.3
-topics: [vlm, vision-language, frozen-encoder]
+topics: [vlm, multimodal]          # 안정 hub slug (자유문자열 아님)
 references:
-  - paper_id: 2106.04560
-    topic: "frozen visual encoder reuse"
-    cited_for: "BLIP-2의 frozen ViT 초기화 근거로 인용"
+  - paper_id: 2103.00020
+    topic: clip-contrastive
+    cited_for: "BLIP-2의 frozen 이미지 인코더 초기화 근거로 인용"
 figures:
-  - file: figures/fig_1.png
+  - file: figures/fig_1_overview.png
     caption: "Figure 1: BLIP-2 architecture overview."
 ```
 
 ---
 
-## 사용 예시
+## 기술 스택
 
-Claude Desktop에서:
+| 영역 | 선택 |
+|---|---|
+| MCP 서버 | FastMCP (stdio) |
+| 에이전트 | Pydantic-AI — multi-provider (Anthropic / OpenAI / Google) |
+| 백엔드 | FastAPI + SSE (스트리밍) |
+| 프론트 | Next.js 16 · React 19 · Tailwind CSS v4 |
+| 추출 | PyMuPDF (PDF) + Gemini Vision (figure/table bbox) |
+| 저장 | Obsidian vault (Markdown), SQLite (대화 세션) |
+| 데이터 | arXiv · Semantic Scholar · Hugging Face Daily Papers |
+| 캐시 | 디스크 캐시 — 동일 paper_id 재요청은 0 네트워크 |
+
+---
+
+## 사용 예시
 
 ```
 > BLIP-2 위키에 추가해줘
-→ paper-ingest 스킬 발동 → papers/blip-2/ 폴더 생성, figure·table 추출
+→ paper-ingest → papers/blip-2/ 생성, figure·table 추출·선별, 요약 + hub 매핑
 
 > BLIP-2 흐름 보여줘
-→ citation-analysis 스킬 발동 → refs/cites 동적 토픽 + cited_for 채움
-  → 사용자 승인 게이트 → vault 영구 누적 + Mermaid·Canvas 시각화
+→ citation-analysis → refs/cites를 hub로 분류 + cited_for 채움
+  → 사용자 승인 게이트 → vault 누적 + Mermaid·Canvas 시각화 → Obsidian 그래프로 확인
 
 > 오늘 트렌딩 논문 정리해줘
-→ daily-digest 스킬 발동 → digests/2026-06-07.md 저장
+→ daily-digest → digests/2026-06-29.md 저장
 ```
 
 ---

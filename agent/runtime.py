@@ -3,7 +3,7 @@
 모델은 provider-prefixed 문자열로 지정 (멀티 provider):
   - anthropic:claude-sonnet-4-5
   - openai:gpt-4o
-  - google-gla:gemini-1.5-pro
+  - google:gemini-2.5-pro
 ENV `RESEARCH_MODEL`로 기본값 오버라이드 가능.
 """
 

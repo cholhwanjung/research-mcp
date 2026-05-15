@@ -1,0 +1,33 @@
+# Research Agent API (web deploy, self-hosted). 빌드는 repo 루트에서:
+#   docker build -f Dockerfile.api -t research-api .
+FROM python:3.10-slim
+
+# uv (의존성 관리) — 공식 이미지에서 바이너리만 복사.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# 1) 의존성 레이어 (코드와 분리해 캐시 적중률 ↑). 프로젝트 자체는 설치 안 함(--no-install-project),
+#    dev 의존성(pytest 등)도 제외(--no-dev).
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
+
+# 2) 애플리케이션 코드 — 단방향 레이어 순서 + MCP tool/skill 자산.
+COPY core/ ./core/
+COPY sources/ ./sources/
+COPY analysis/ ./analysis/
+COPY wiki/ ./wiki/
+COPY tools/ ./tools/
+COPY agent/ ./agent/
+COPY api/ ./api/
+COPY server.py ./
+COPY .claude/skills/ ./.claude/skills/
+
+# /app을 import 경로로, vault는 마운트 지점(/vault)으로.
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    OBSIDIAN_VAULT_PATH=/vault
+
+EXPOSE 8000
+CMD ["uvicorn", "api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
