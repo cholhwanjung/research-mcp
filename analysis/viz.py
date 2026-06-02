@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 # Obsidian Canvas 좌표 (px). anchor 중앙 (x=0), refs 왼쪽 (음수), cites 오른쪽 (양수).
-_NODE_W = 260
-_NODE_H = 70
-_GROUP_GAP_Y = 180
-_COL_GAP_X = 360
+_NODE_W = 300
+_NODE_H = 100          # 3줄(제목·arXiv·cited)이 잘리지 않도록 상향
+_PAPER_V_GAP = 24      # 한 그룹 안 논문 노드 사이 세로 간격
+_GROUP_PAD = 60        # 그룹 레인 사이 여백
+_COL_GAP_X = 400
 
 
 def _mermaid_label(text: str) -> str:
@@ -100,6 +101,13 @@ def _paper_text(p: dict) -> str:
     )
 
 
+def _papers_block_height(n_papers: int) -> int:
+    """n개 논문 노드가 세로로 차지하는 총 높이."""
+    if n_papers <= 0:
+        return 0
+    return n_papers * _NODE_H + (n_papers - 1) * _PAPER_V_GAP
+
+
 def _place_side(
     groups: list[dict],
     side: str,
@@ -110,6 +118,10 @@ def _place_side(
 
     refs 면 edge 방향은 paper → group → anchor.
     cites 면 anchor → group → paper.
+
+    배치: 각 그룹은 자기 논문 수에 맞는 세로 레인을 독점하고, 레인을 위→아래로
+    누적 배치한다(고정 간격 X). 레인 높이 = max(노드높이, 논문블록높이)이므로
+    같은 컬럼에서 논문끼리도, 인접 그룹끼리도 겹치지 않는다. 전체는 y=0 중심 정렬.
     """
     is_ref = side == "ref"
     sign = -1 if is_ref else 1
@@ -117,12 +129,17 @@ def _place_side(
     group_x = sign * _COL_GAP_X
     paper_x = sign * 2 * _COL_GAP_X
 
-    n_groups = len(groups)
-    first_y = -((n_groups - 1) * _GROUP_GAP_Y) // 2 if n_groups else 0
+    lane_heights = [
+        max(_NODE_H, _papers_block_height(len(g.get("papers") or []))) for g in groups
+    ]
+    total_h = sum(lane_heights) + max(0, len(groups) - 1) * _GROUP_PAD
+    cursor = -total_h // 2
 
     for gi, g in enumerate(groups):
         gid = f"{prefix}{gi}"
-        gy = first_y + gi * _GROUP_GAP_Y
+        lane_h = lane_heights[gi]
+        group_cy = cursor + lane_h // 2
+        gy = group_cy - _NODE_H // 2
         nodes.append(_canvas_node(gid, f"## {g.get('topic', f'{prefix} {gi}')}", x=group_x, y=gy))
         if is_ref:
             edges.append(_canvas_edge(f"e_{gid}_anchor", gid, "anchor"))
@@ -130,16 +147,18 @@ def _place_side(
             edges.append(_canvas_edge(f"e_anchor_{gid}", "anchor", gid))
 
         papers = g.get("papers") or []
-        n_papers = len(papers)
-        first_py = gy - ((n_papers - 1) * (_NODE_H + 20)) // 2 if n_papers else gy
+        block_h = _papers_block_height(len(papers))
+        first_py = group_cy - block_h // 2
         for pi, p in enumerate(papers):
             pid = f"{gid}p{pi}"
-            py = first_py + pi * (_NODE_H + 20)
+            py = first_py + pi * (_NODE_H + _PAPER_V_GAP)
             nodes.append(_canvas_node(pid, _paper_text(p), x=paper_x, y=py))
             if is_ref:
                 edges.append(_canvas_edge(f"e_{pid}_{gid}", pid, gid))
             else:
                 edges.append(_canvas_edge(f"e_{gid}_{pid}", gid, pid))
+
+        cursor += lane_h + _GROUP_PAD
 
 
 def build_canvas_json(
