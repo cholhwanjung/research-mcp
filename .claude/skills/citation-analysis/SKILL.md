@@ -36,7 +36,7 @@ inputs:
 | 8 | **(승인 게이트)** | 사용자에게 미리보기 + 신규 hub 후보 함께 표시 후 vault 저장 여부 확인 — 아래 "승인 게이트" 절 |
 | 9 | (승인 시) `wiki_read_note(arxiv_id)` → `wiki_write_note(arxiv_id, frontmatter, body)` | anchor 노트 frontmatter 갱신. `references[*].hubs`, `cited_by[*].hubs` 필드에 매칭된 hub slug 리스트 저장. arxiv_id는 title-slug 폴더로 자동 매핑. 노트가 없으면 먼저 `paper-ingest`. |
 | 10 | (승인 시) 각 매칭된 hub에 `wiki_link(arxiv_id, hub_slug, note=cited_for)` | wikilink 누적. **target은 hub slug만** (`topics/{slug}`이 아닌 hub slug 그대로 — `[[VLM]]`). 신규 hub 승인 시 `wiki_write_note(f"topics/{slug}", frontmatter={tier:hub,...}, body)`로 먼저 hub 노트 생성. |
-| 11 | `build_citation_canvas(anchor, ref_groups, cite_groups, slug={title-slug})` | 시각화 — 승인 여부와 무관하게 항상 산출. `slug`는 vault의 title-slug. anchor frontmatter의 `slug` 필드 또는 `wiki_read_note` 응답에서 추출. |
+| 11 | `build_citation_graph(anchor, ref_groups, cite_groups, slug={title-slug})` | 시각화 — 승인 여부와 무관하게 항상 산출. Mermaid 노트를 `graphs/{slug}.md`에 저장(옵시디언 렌더). `slug`는 vault의 title-slug. anchor frontmatter의 `slug` 필드 또는 `wiki_read_note` 응답에서 추출. |
 
 ## 승인 게이트 (Step 8)
 
@@ -106,7 +106,7 @@ citation_velocity: 411.3
    cite 토픽 ({M_cite}개): {topic_1}, ...
    vault: {저장 완료 | 미저장 (사용자 거부)}
    wikilink: {K}개 추가 | -
-   캔버스: canvases/{arxiv_id}.canvas — Obsidian에서 자유 편집 가능
+   그래프: graphs/{slug}.md — Obsidian에서 mermaid 렌더 (겹침 없음)
 
 ```mermaid
 ...
