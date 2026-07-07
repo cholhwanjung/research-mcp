@@ -1,24 +1,17 @@
-"""시각화 산출물 빌더 ([ADR-005](../docs/ADR.md#adr-005)).
+"""시각화 산출물 빌더.
 
 방향: **references → anchor → citations** (인과 흐름).
 
-두 가지를 동시에 만든다:
-- `build_mermaid(anchor, ref_groups, cite_groups, direction)` → Mermaid graph 텍스트
-- `build_canvas_json(anchor, ref_groups, cite_groups)` → Obsidian Canvas 1.0 spec dict
+`build_mermaid(anchor, ref_groups, cite_groups, direction)` → Mermaid graph 텍스트.
+Mermaid는 auto-layout이라 좌표를 직접 계산하지 않는다 (노드·엣지 관계만 정의).
 
 입력 모델:
 - anchor: dict — {arxiv_id, title, year, citation_count, citation_velocity?}
-- ref_groups / cite_groups: list of {"topic": str, "papers": list[dict]} — 동적 토픽 (ADR-009).
+- ref_groups / cite_groups: list of {"topic": str, "papers": list[dict]} — 동적 토픽.
   ref_groups의 paper는 anchor가 *인용한* 논문, cite_groups의 paper는 anchor를 *인용한* 논문.
 """
 
 from __future__ import annotations
-
-# Obsidian Canvas 좌표 (px). anchor 중앙 (x=0), refs 왼쪽 (음수), cites 오른쪽 (양수).
-_NODE_W = 260
-_NODE_H = 70
-_GROUP_GAP_Y = 180
-_COL_GAP_X = 360
 
 
 def _mermaid_label(text: str) -> str:
@@ -68,99 +61,3 @@ def build_mermaid(
             lines.append(f"  {gid} --> {pid}")
 
     return "\n".join(lines)
-
-
-def _canvas_node(nid: str, text: str, x: int, y: int) -> dict:
-    return {
-        "id": nid,
-        "type": "text",
-        "text": text,
-        "x": x,
-        "y": y,
-        "width": _NODE_W,
-        "height": _NODE_H,
-    }
-
-
-def _canvas_edge(eid: str, src: str, dst: str) -> dict:
-    return {
-        "id": eid,
-        "fromNode": src,
-        "toNode": dst,
-        "fromSide": "right",
-        "toSide": "left",
-    }
-
-
-def _paper_text(p: dict) -> str:
-    return (
-        f"**{p.get('title', 'paper')}**\n"
-        f"arXiv:{p.get('arxiv_id', '')}  · {p.get('year', '?')}\n"
-        f"cited {p.get('citation_count', 0)}"
-    )
-
-
-def _place_side(
-    groups: list[dict],
-    side: str,
-    nodes: list[dict],
-    edges: list[dict],
-) -> None:
-    """한 쪽(refs=left, cites=right)의 그룹·논문 노드와 엣지 추가.
-
-    refs 면 edge 방향은 paper → group → anchor.
-    cites 면 anchor → group → paper.
-    """
-    is_ref = side == "ref"
-    sign = -1 if is_ref else 1
-    prefix = "r" if is_ref else "c"
-    group_x = sign * _COL_GAP_X
-    paper_x = sign * 2 * _COL_GAP_X
-
-    n_groups = len(groups)
-    first_y = -((n_groups - 1) * _GROUP_GAP_Y) // 2 if n_groups else 0
-
-    for gi, g in enumerate(groups):
-        gid = f"{prefix}{gi}"
-        gy = first_y + gi * _GROUP_GAP_Y
-        nodes.append(_canvas_node(gid, f"## {g.get('topic', f'{prefix} {gi}')}", x=group_x, y=gy))
-        if is_ref:
-            edges.append(_canvas_edge(f"e_{gid}_anchor", gid, "anchor"))
-        else:
-            edges.append(_canvas_edge(f"e_anchor_{gid}", "anchor", gid))
-
-        papers = g.get("papers") or []
-        n_papers = len(papers)
-        first_py = gy - ((n_papers - 1) * (_NODE_H + 20)) // 2 if n_papers else gy
-        for pi, p in enumerate(papers):
-            pid = f"{gid}p{pi}"
-            py = first_py + pi * (_NODE_H + 20)
-            nodes.append(_canvas_node(pid, _paper_text(p), x=paper_x, y=py))
-            if is_ref:
-                edges.append(_canvas_edge(f"e_{pid}_{gid}", pid, gid))
-            else:
-                edges.append(_canvas_edge(f"e_{gid}_{pid}", gid, pid))
-
-
-def build_canvas_json(
-    anchor: dict,
-    ref_groups: list[dict],
-    cite_groups: list[dict],
-) -> dict:
-    """Obsidian Canvas 1.0 spec dict. anchor 중앙, refs 왼쪽, cites 오른쪽."""
-    nodes: list[dict] = []
-    edges: list[dict] = []
-
-    anchor_text = (
-        f"# {anchor.get('title', 'anchor')}\n"
-        f"arXiv:{anchor.get('arxiv_id', '')}  · {anchor.get('year', '?')}\n"
-        f"cited {anchor.get('citation_count', 0)}"
-    )
-    if anchor.get("citation_velocity") is not None:
-        anchor_text += f"  ·  vel {anchor['citation_velocity']:.1f}"
-    nodes.append(_canvas_node("anchor", anchor_text, x=0, y=0))
-
-    _place_side(ref_groups, "ref", nodes, edges)
-    _place_side(cite_groups, "cite", nodes, edges)
-
-    return {"nodes": nodes, "edges": edges}

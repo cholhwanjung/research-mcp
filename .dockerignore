@@ -1,0 +1,17 @@
+.git
+.venv
+.cache
+**/__pycache__
+**/*.py[oc]
+.env
+.env.local
+# 프론트엔드는 API 이미지에 불필요
+web
+# vault/PDF는 런타임에 마운트
+vault
+pdfs
+# 하네스/문서/테스트는 런타임 불필요 (.claude/skills만 Dockerfile에서 명시 COPY)
+docs
+tests
+CLAUDE.md
+.claude/commands
