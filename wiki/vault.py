@@ -12,7 +12,7 @@ from pathlib import Path
 from core import config
 from wiki.frontmatter import parse_note
 
-_STANDARD_SUBDIRS = ("papers", "topics", "digests", "_meta")
+_STANDARD_SUBDIRS = ("papers", "topics", "digests", "notes", "_meta")
 # frontmatter의 arxiv_id를 quote 유무 모두 매칭.
 _ARXIV_LINE_RE = re.compile(
     r'^arxiv_id\s*:\s*["\']?([^"\'\s]+)["\']?\s*$',

@@ -130,6 +130,37 @@ def wiki_list_hubs() -> str:
     return "\n".join(lines)
 
 
+def wiki_search(query: str, top_k: int = 5, expand: bool = True) -> str:
+    """질문과 관련된 vault 노트를 어휘 매칭 + 링크 이웃 확장으로 검색 (ADR-028).
+
+    vault 전체를 컨텍스트에 로드하지 않고 관련 노트 slug만 추려준다 — 이후
+    상세는 `wiki_read_note(slug)`로 조회. 임베딩·외부 호출 없음.
+
+    Args:
+        query: 자연어 질의 (예: "frozen visual encoder를 쓰는 논문").
+        top_k: 최대 결과 수 (기본 5).
+        expand: True면 어휘 seed에서 `[[wikilink]]` 1-hop 이웃까지 확장 (기본 True).
+    """
+    from analysis.retrieval import search
+    from wiki.linker import extract_links, read_vault_notes
+
+    notes = read_vault_notes()
+    if not notes:
+        return "❌ vault가 비어 있습니다 (검색할 노트 없음)."
+    adjacency = {slug: extract_links(content) for slug, content in notes.items()}
+    hits = search(query, notes, adjacency, top_k=top_k, expand=expand)
+    if not hits:
+        return f'🔎 "{query}" — 관련 노트를 찾지 못했습니다.'
+    lines = [f'🔎 wiki_search "{query}" — 관련 노트 {len(hits)}개']
+    for i, h in enumerate(hits, 1):
+        tag = ("어휘: " + ", ".join(h.matched)) if h.via == "lexical" else "이웃 확장"
+        lines.append(f"{i}. [[{h.slug}]]  (score {h.score:.1f} · {tag})")
+        if h.snippet:
+            lines.append(f"   {h.snippet}")
+    lines.append("\n→ 상세는 wiki_read_note(slug)로 조회하세요.")
+    return "\n".join(lines)
+
+
 def wiki_link(source: str, target: str, note: str = "") -> str:
     """source 노트 본문 끝에 `- [[target]]` 라인 추가. 중복이면 skip.
 
@@ -154,4 +185,5 @@ def register(mcp) -> None:
     mcp.tool()(wiki_write_note)
     mcp.tool()(wiki_list_hubs)
     mcp.tool()(wiki_list)
+    mcp.tool()(wiki_search)
     mcp.tool()(wiki_link)
