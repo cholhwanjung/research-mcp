@@ -5,19 +5,6 @@
 
 ---
 
-## 프로젝트 구조
-
-같은 도구·스킬·vault를 두 경로로 노출 — 비즈니스 로직(`sources/`·`analysis/`·`wiki/`·`tools/`)은 한 곳에 두고, 두 진입점이 같은 함수를 다른 transport로 wrap.
-
-| | Claude Desktop (MCP) | 웹 채팅 앱 (self-hosted) |
-|---|---|---|
-| 진입 | `server.py` — FastMCP, stdio | `web/` (Next.js) → `api/` (FastAPI + SSE) → `agent/` (Pydantic-AI) |
-| 모델 | Claude | Claude / GPT / Gemini 선택 |
-| 시각화 | Mermaid + Obsidian | Obsidian |
-| 브랜치 | `main` | `web-app` |
-
----
-
 ## 주요 기능
 
 ### 1. 검색과 인용 그래프
@@ -43,12 +30,14 @@ vault/papers/blip-2/
 - **Vision 기반 figure / table 추출** — Gemini Vision으로 figure·table 영역을 crop한다. *(`GOOGLE_API_KEY` 필요)*
 - **안정 hub 분류** — 큐레이트된 **hub 노트**(e.g. `topics/*.md` — `LLM`, `VLM`, `Diffusion`, `Agent-Reasoning`)에 1–3개로 매핑.
 - **양방향 wikilink** — `[[clip]]` 같은 wikilink가 자동 누적.
+- **vault 리트리벌** — `wiki_search`로 "질문 → 관련 노트"를 어휘 seed + `[[wikilink]]` 이웃 확장으로 검색. vault 전체를 로드하지 않고 관련 노트만 추린다.
+- **종합 통찰 노트** — 세션에서 논문을 가로질러 얻은 통찰을 `insight-capture` 스킬로 `notes/<slug>.md`에 누적 (승인 게이트).
 
 ### 3. 시각화: Mermaid + Obsidian
 한 anchor 논문을 중심으로 인용 흐름을 *카드 그래프* 로 출력.
 
 - **Mermaid graph** — 응답에 즉시 임베드되어 Claude Desktop / GitHub / Obsidian이 그대로 렌더.
-- **Obsidian Canvas JSON** (`vault/canvases/<slug>.canvas`) — 옵시디언에서 카드를 자유 배치 가능한 1.0 spec.
+- **Mermaid 노트 저장** — 같은 다이어그램을 `vault/graphs/<slug>.md` 노트로도 저장. Obsidian이 노트를 열면 그래프로 렌더 (auto-layout이라 노드 겹침 없음).
 
 ```mermaid
 graph LR
@@ -67,17 +56,17 @@ graph LR
 
 ```
 sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py            (Claude Desktop · MCP)
- (fetch)     (rank/group)  (vault)  (19 tool)  │
+ (fetch)     (rank/group)  (vault)  (20 tool)  │
                                                └─  agent/ → api/ → web/  (웹 앱 · SSE 채팅)
 ```
 
 - **단방향 import** — 위 화살표 방향으로만 의존. 역방향 금지.
-- **tool은 한 곳에 정의** — `tools/*.py`의 함수를 MCP(`server.py`)와 에이전트(`agent/`)가 동일하게 재사용한다. 같은 19개 도구가 두 transport로 노출된다.
-- **에이전트** — Pydantic-AI. provider-prefixed 모델 문자열(`anthropic:` / `openai:` / `google-gla:`)로 멀티 provider 전환. 스킬 정의를 system prompt로 로드.
+- **tool은 한 곳에 정의** — `tools/*.py`의 함수를 MCP(`server.py`)와 에이전트(`agent/`)가 동일하게 재사용한다. 같은 20개 도구가 두 transport로 노출된다.
+- **에이전트** — Pydantic-AI. provider-prefixed 모델 문자열(`anthropic:` / `openai:` / `google:`)로 멀티 provider 전환. 스킬 정의를 system prompt로 로드.
 
 ---
 
-## MCP Tool 카탈로그 (19)
+## MCP Tool 카탈로그 (20)
 
 각 tool은 한 카테고리에만 속하도록 직교적으로 설계 — 호출 순서를 가진 워크플로우는 아래 *스킬* 로 묶인다.
 
@@ -86,8 +75,8 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | **fetch** | `search_papers`, `get_paper_by_id`, `get_hf_daily_papers`, `get_citation_contexts` |
 | **graph** | `get_references_by_citations`, `get_citations_by_citations` |
 | **artifact** | `download_paper`, `read_paper`, `extract_paper_figures`, `extract_paper_tables`, `prune_paper_figures`, `prune_paper_tables`, `render_paper_page` |
-| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_link` |
-| **viz** | `build_citation_canvas` |
+| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_search`, `wiki_link` |
+| **viz** | `build_citation_graph` |
 
 ---
 
@@ -100,6 +89,9 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | `paper-ingest` | "이 논문 ingest", "BLIP-2 위키에 추가" | 메타·PDF·figure·table·요약을 한 번에 vault에 누적. 분야를 기존 hub에 매핑. |
 | `citation-analysis` | "BLIP-2 흐름 보여줘", "<arxiv_id> 인용 분석" | anchor 1편 중심으로 refs/cites를 hub로 분류 + `cited_for` 채우기 + 시각화. vault 영구 누적은 사용자 승인 게이트. |
 | `daily-digest` | "오늘 트렌딩 논문", "daily digest" | HF Daily를 받아 `digests/<date>.md` 에 정리, 오늘의 흐름 요약. |
+| `wiki-lint` | "위키 점검", "vault 정리" | vault 정합성 점검 — orphan·깨진 링크·누락 교차참조·stale hub·노트 간 모순 스캔 → 승인 게이트 diff. |
+| `insight-capture` | "이 통찰 저장", "notes에 정리" | 논문을 가로질러 종합한 통찰을 `notes/<slug>.md`에 누적 (승인 게이트). |
+| `self-improve` | "회고 반영해줘", "self-improve" | 세션 회고·반복 실패를 분석해 `CLAUDE.md`/`docs/*` diff 제안 (승인 게이트, 메타 레이어). |
 
 ---
 
@@ -114,7 +106,27 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 uv sync
 ```
 
-### Claude Desktop MCP 설정
+### 플러그인 설치 (권장 — Claude Desktop / Claude Code)
+
+```
+/plugin marketplace add cholhwanjung/research-mcp
+/plugin install research-mcp@research-mcp
+```
+
+활성화(enable) 시 아래를 프롬프트로 입력한다. **secret은 repo가 아니라 keychain에 저장된다.**
+
+| 설정 | 설명 |
+|---|---|
+| `vault_path` | vault 루트 (예: `/Users/you/Documents/research-wiki`). 비우면 `~/Documents/research-wiki` |
+| `google_api_key` | Gemini Vision — figure/table 추출용. 없으면 멀티모달 skip, 텍스트 요약만 |
+| `ss_api_key` | Semantic Scholar API key (선택) — rate-limit 완화 |
+
+> **요구사항**: `uv`가 설치돼 있어야 한다 (플러그인이 `server.py`를 uv로 기동). 첫 기동 시 의존성 sync가 한 번 돈다(네트워크 필요, 수십 초). 업데이트는 `/plugin marketplace update` 후 재설치.
+
+### Claude Desktop MCP 설정 (수동 — 대안)
+
+> 플러그인 대신 **MCP 서버만** 직접 등록하는 방법. 이 경로는 **스킬을 포함하지 않는다** (플러그인은 6개 스킬까지 번들). tool만 필요할 때 사용.
+
 `~/Library/Application Support/Claude/claude_desktop_config.json` 에 추가:
 
 ```json
@@ -148,7 +160,7 @@ Claude Desktop 외에, 같은 도구·워크플로우를 **웹 채팅 UI**로도
 
 ### 구성
 - `api/` — FastAPI + SSE 백엔드. `/chat`(스트리밍) · `/skills` · `/health`. Bearer 토큰 인증(옵션).
-- `agent/` — Pydantic-AI 에이전트. MCP의 19개 tool을 그대로 재사용 + multi-provider.
+- `agent/` — Pydantic-AI 에이전트. MCP의 tool 재사용 + multi-provider.
 - `web/` — Next.js 채팅 프론트 (스트리밍 + 모델 선택기 + 토큰 입력).
 
 ### 실행 — 한 번에 (로컬, 추천)
@@ -188,7 +200,7 @@ cd web && npm run dev                                       # 프론트(:3000)
 | 변수 | 설명 |
 |---|---|
 | `RESEARCH_API_TOKEN` | 설정 시 API 호출에 `Authorization: Bearer` 강제 (비우면 인증 off) |
-| `RESEARCH_MODEL` | 기본 채팅 모델 (`anthropic:…` / `openai:…` / `google-gla:…`) |
+| `RESEARCH_MODEL` | 기본 채팅 모델 (`anthropic:…` / `openai:…` / `google:…`) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | 사용할 provider 키 |
 | `GOOGLE_API_KEY` | Gemini Vision — figure/table 추출 (ingest 시) |
 | `VAULT_HOST_PATH` | (compose) host vault 절대경로 → 컨테이너 `/vault` |
@@ -206,10 +218,12 @@ vault/
 │           └── fig_<n>_<caption-slug>.png
 ├── topics/
 │   └── <hub-slug>.md        # 안정 hub — 백링크로 논문이 자동 집계
+├── notes/
+│   └── <slug>.md            # 논문 간 종합 통찰 (insight-capture)
 ├── digests/
 │   └── <YYYY-MM-DD>.md      # 일일 HF Daily 노트
-├── canvases/
-│   └── <slug>.canvas        # Obsidian Canvas JSON
+├── graphs/
+│   └── <slug>.md            # 인용 흐름 Mermaid 노트 (build_citation_graph)
 └── pdfs/
     └── <arxiv_id>.pdf
 ```
@@ -222,7 +236,7 @@ title: "BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Enco
 year: 2023
 citation_count: 1234
 citation_velocity: 411.3
-topics: [vlm, multimodal]          # 안정 hub slug (자유문자열 아님)
+topics: [vlm, multimodal]
 references:
   - paper_id: 2103.00020
     topic: clip-contrastive
@@ -257,7 +271,7 @@ figures:
 
 > BLIP-2 흐름 보여줘
 → citation-analysis → refs/cites를 hub로 분류 + cited_for 채움
-  → 사용자 승인 게이트 → vault 누적 + Mermaid·Canvas 시각화 → Obsidian 그래프로 확인
+  → 사용자 승인 게이트 → vault 누적 + Mermaid 시각화(`graphs/` 노트) → Obsidian 그래프로 확인
 
 > 오늘 트렌딩 논문 정리해줘
 → daily-digest → digests/2026-06-29.md 저장
