@@ -23,7 +23,7 @@ def resolve_model_name(model: str | None = None) -> str:
 
 
 def make_agent(model: str | None = None):
-    """19개 MCP tool + skill 기반 시스템 프롬프트를 갖춘 Pydantic-AI Agent."""
+    """MCP tool + skill 기반 시스템 프롬프트를 갖춘 Pydantic-AI Agent."""
     from pydantic_ai import Agent
 
     return Agent(
