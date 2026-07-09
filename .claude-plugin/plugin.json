@@ -1,0 +1,40 @@
+{
+  "name": "research-mcp",
+  "displayName": "Research MCP",
+  "version": "0.1.0",
+  "description": "arXiv·Semantic Scholar·HF Daily 논문 리서치 워크플로우 — 검색·인용 그래프(velocity)·멀티모달 figure/table 추출 + Obsidian vault 영속. 20 MCP tool + 6 skill.",
+  "author": { "name": "cholhwanjung" },
+  "repository": "https://github.com/cholhwanjung/research-mcp",
+  "keywords": ["research", "arxiv", "semantic-scholar", "obsidian", "citations", "mcp"],
+  "skills": "./.claude/skills/",
+  "userConfig": {
+    "vault_path": {
+      "type": "string",
+      "title": "Obsidian vault 경로",
+      "description": "노트·PDF·figure를 저장할 vault 루트. 예: /Users/you/Documents/research-wiki (비우면 ~/Documents/research-wiki)"
+    },
+    "google_api_key": {
+      "type": "string",
+      "title": "Google API Key (Gemini Vision)",
+      "description": "figure/table bbox 추정용. 없으면 멀티모달 추출은 skip되고 텍스트 요약만 저장.",
+      "sensitive": true
+    },
+    "ss_api_key": {
+      "type": "string",
+      "title": "Semantic Scholar API Key (선택)",
+      "description": "설정 시 citation API rate-limit 완화.",
+      "sensitive": true
+    }
+  },
+  "mcpServers": {
+    "research": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["--directory", "${CLAUDE_PLUGIN_ROOT}", "run", "python", "server.py"],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "${user_config.vault_path}",
+        "GOOGLE_API_KEY": "${user_config.google_api_key}",
+        "SS_API_KEY": "${user_config.ss_api_key}"
+      }
+    }
+  }
+}

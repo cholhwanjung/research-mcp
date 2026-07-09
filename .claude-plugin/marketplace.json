@@ -1,0 +1,12 @@
+{
+  "name": "research-mcp",
+  "owner": { "name": "cholhwanjung" },
+  "plugins": [
+    {
+      "name": "research-mcp",
+      "source": "./",
+      "description": "arXiv/Semantic Scholar/HF 논문 리서치 + Obsidian vault 누적",
+      "version": "0.1.0"
+    }
+  ]
+}
