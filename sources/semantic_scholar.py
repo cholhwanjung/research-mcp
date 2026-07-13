@@ -13,9 +13,11 @@ import re
 from core import cache
 from core.filter import is_survey
 from core.http import get
+from core.slug import is_arxiv_id
 
 SS_BASE = "https://api.semanticscholar.org/graph/v1/paper"
 SS_CACHE_TTL = 7 * 24 * 3600  # 1주일 — citation count는 자주 안 변함
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")  # SS paperId (sha)
 
 
 def _cache_key(url: str, params: dict | None) -> str:
@@ -53,12 +55,10 @@ def resolve_id(paper_id: str) -> str:
         return f"PMID:{paper_id[5:]}"
     if upper.startswith("PMCID:"):
         return f"PMCID:{paper_id[6:]}"
-    if re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", paper_id):
+    if is_arxiv_id(paper_id):
         return f"ARXIV:{paper_id}"
     if paper_id.startswith("10."):
         return f"DOI:{paper_id}"
-    if re.match(r"^[0-9a-fA-F]{40}$", paper_id):
-        return paper_id
     return paper_id
 
 
@@ -163,7 +163,7 @@ def _cited_identifiers(cited_id: str) -> tuple[str | None, str | None]:
     rid = resolve_id(cited_id)
     if rid.startswith("ARXIV:"):
         return None, rid[6:]
-    if re.match(r"^[0-9a-fA-F]{40}$", rid):
+    if _SHA_RE.match(rid):
         return rid, None
     # DOI 등 — paperId 매칭은 못 함. ArXiv 추정도 못 함.
     return None, None

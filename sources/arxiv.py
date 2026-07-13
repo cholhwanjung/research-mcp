@@ -10,8 +10,7 @@ import re
 
 import aiohttp
 
-
-_ARXIV_ID_RE = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
+from core.slug import is_arxiv_id
 
 
 def normalize_arxiv_id(paper_id: str) -> str | None:
@@ -19,7 +18,7 @@ def normalize_arxiv_id(paper_id: str) -> str | None:
     paper_id = paper_id.strip()
     if paper_id.upper().startswith("ARXIV:"):
         paper_id = paper_id[6:]
-    if not _ARXIV_ID_RE.match(paper_id):
+    if not is_arxiv_id(paper_id):
         return None
     return paper_id
 

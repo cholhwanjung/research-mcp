@@ -51,13 +51,6 @@ def write_note(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def list_papers() -> list[str]:
-    base = vault_root() / "papers"
-    if not base.exists():
-        return []
-    return sorted(p.name for p in base.iterdir() if p.is_dir())
-
-
 def list_hubs() -> list[dict]:
     """vault `topics/*.md`의 frontmatter에서 `tier: hub`인 노트의 메타를 반환 (ADR-022).
 

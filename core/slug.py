@@ -25,49 +25,38 @@ def is_arxiv_id(s: str) -> bool:
     return bool(_ARXIV_RE.match(s.strip()))
 
 
-def slugify_title(title: str) -> str:
-    """논문 title → 사람·grep 친화 파일시스템 slug.
+def _normalize(text: str, max_len: int) -> str:
+    """공통 정규화 파이프라인. 빈 결과면 빈 문자열 (fallback은 caller 몫).
 
-    규칙:
-    - 콜론(`:`) 이전 부분만 사용 — 보통 짧은 약어/이름이 콜론 앞에 옴.
-      예: "BLIP-2: Bootstrapping ..." → "blip-2"
-    - 비ASCII 문자는 NFKD 정규화 후 ASCII로 변환 시도, 실패하면 원문 보존.
-    - 영숫자·하이픈만 남기고 모두 하이픈으로 치환.
-    - 연속 하이픈은 1개로 축약, 좌우 하이픈 트림.
+    - 비ASCII 문자는 NFKD 정규화 후 ASCII로 변환 시도, 실패하면 원문 보존
+      (한글 등은 NFKD로도 ASCII가 안 됨).
     - 소문자.
-    - 최대 80자로 truncate (파일시스템 길이·grep 친화).
-    - 빈 문자열이 되면 'untitled' 반환.
+    - 어포스트로피·따옴표는 단어 안에서 drop ("what's" → "whats").
+    - 영숫자가 아닌 모든 문자(공백·구두점·기타) → 하이픈. 연속 축약 + 좌우 트림.
+    - `max_len`으로 truncate (파일시스템 길이·grep 친화).
+    """
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_attempt = normalized.encode("ascii", "ignore").decode("ascii")
+    base = ascii_attempt if ascii_attempt.strip() else text
+    base = base.lower()
+    base = re.sub(r"['’‘`\"]", "", base)
+    base = re.sub(r"[^a-z0-9À-￿]+", "-", base)
+    base = re.sub(r"-+", "-", base).strip("-")
+    if len(base) > max_len:
+        base = base[:max_len].rstrip("-")
+    return base
+
+
+def slugify_title(title: str) -> str:
+    """논문 title → 사람·grep 친화 파일시스템 slug (최대 80자).
+
+    콜론(`:`) 이전 부분만 사용 — 보통 짧은 약어/이름이 콜론 앞에 옴.
+    예: "BLIP-2: Bootstrapping ..." → "blip-2". 빈 결과는 'untitled'.
     """
     if not title:
         return "untitled"
-
-    # 콜론 이전 부분만 (subtitle 제거).
-    head = title.split(":", 1)[0].strip()
-    if not head:
-        head = title.strip()
-
-    # ASCII 변환 시도. NFKD로 분해한 뒤 ASCII로 인코딩 가능한 문자만 남김.
-    # 한글 등은 NFKD로도 ASCII가 안 되므로 원문 보존 후 별도 처리.
-    normalized = unicodedata.normalize("NFKD", head)
-    ascii_attempt = normalized.encode("ascii", "ignore").decode("ascii")
-
-    base = ascii_attempt if ascii_attempt.strip() else head
-    base = base.lower()
-
-    # 어포스트로피·따옴표는 단어 안에서 drop ("what's" → "whats").
-    base = re.sub(r"['’‘`\"]", "", base)
-    # 영숫자가 아닌 모든 문자(공백·구두점·기타) → 하이픈.
-    base = re.sub(r"[^a-z0-9À-￿]+", "-", base)
-    # 연속 하이픈 축약 + 좌우 트림.
-    base = re.sub(r"-+", "-", base).strip("-")
-
-    if not base:
-        return "untitled"
-
-    if len(base) > _MAX_SLUG_LEN:
-        base = base[:_MAX_SLUG_LEN].rstrip("-")
-
-    return base
+    head = title.split(":", 1)[0].strip() or title.strip()
+    return _normalize(head, _MAX_SLUG_LEN) or "untitled"
 
 
 _MAX_CAPTION_LEN = 60
@@ -79,25 +68,8 @@ def slugify_caption(caption: str, max_len: int = _MAX_CAPTION_LEN) -> str:
     `slugify_title`과 다른 점:
     - 콜론 이전 단축을 하지 않음 (caption은 일반 문장이라 subtitle 개념 없음).
     - 기본 최대 길이가 더 짧음 (60자 — 파일명에 fig_N_ 접두 + 확장자가 추가됨).
-    - 빈 입력은 빈 문자열 반환 (caller가 'fig_<N>' 같은 fallback 결정).
+    - 빈 입력·빈 결과는 빈 문자열 반환 (caller가 'fig_<N>' 같은 fallback 결정).
     """
     if not caption or not caption.strip():
         return ""
-
-    head = caption.strip()
-    normalized = unicodedata.normalize("NFKD", head)
-    ascii_attempt = normalized.encode("ascii", "ignore").decode("ascii")
-    base = ascii_attempt if ascii_attempt.strip() else head
-    base = base.lower()
-
-    # 어포스트로피·따옴표는 단어 안에서 drop.
-    base = re.sub(r"['’‘`\"]", "", base)
-    # 영숫자가 아닌 모든 문자 → 하이픈.
-    base = re.sub(r"[^a-z0-9À-￿]+", "-", base)
-    base = re.sub(r"-+", "-", base).strip("-")
-
-    if not base:
-        return ""
-    if len(base) > max_len:
-        base = base[:max_len].rstrip("-")
-    return base
+    return _normalize(caption.strip(), max_len)
