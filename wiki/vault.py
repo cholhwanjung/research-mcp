@@ -84,6 +84,31 @@ def list_hubs() -> list[dict]:
     return hubs
 
 
+def read_paper_frontmatters() -> list[dict]:
+    """vault `papers/*/<slug>.md` (legacy `index.md` fallback)의 frontmatter dict 리스트.
+
+    통합 인용 네트워크(ADR-031)의 단일 소스 스캔. 파싱 불가 노트는 skip.
+    """
+    base = vault_root() / "papers"
+    if not base.is_dir():
+        return []
+    out: list[dict] = []
+    for paper in sorted(base.iterdir()):
+        if not paper.is_dir():
+            continue
+        for cand in (paper / f"{paper.name}.md", paper / "index.md"):
+            if not cand.is_file():
+                continue
+            try:
+                fm, _body = parse_note(cand.read_text(encoding="utf-8", errors="ignore"))
+            except Exception:
+                break
+            if isinstance(fm, dict) and fm:
+                out.append(fm)
+            break
+    return out
+
+
 def resolve_paper_by_arxiv_id(arxiv_id: str) -> Path | None:
     """vault `papers/<slug>/<slug>.md` (ADR-023) 또는 legacy `index.md` (ADR-010)의
     frontmatter에서 `arxiv_id`로 노트를 찾는다.

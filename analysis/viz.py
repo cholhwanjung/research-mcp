@@ -13,6 +13,8 @@ Mermaid는 auto-layout이라 좌표를 직접 계산하지 않는다 (노드·�
 
 from __future__ import annotations
 
+from analysis.network import sanitize_node_id
+
 
 def _mermaid_label(text: str) -> str:
     """Mermaid 노드 라벨용 escape."""
@@ -21,6 +23,15 @@ def _mermaid_label(text: str) -> str:
 
 def _paper_label(p: dict) -> str:
     return _mermaid_label(f"{p.get('title', 'paper')} ({p.get('year', '?')})")
+
+
+def _paper_node_id(p: dict, fallback: str) -> str:
+    """arxiv_id 기반 안정 노드 ID — 실행 간 동일 논문이 같은 ID (ADR-031).
+
+    arxiv_id가 없으면 순번 fallback (기존 동작 보전).
+    """
+    aid = str(p.get("arxiv_id") or "").strip()
+    return sanitize_node_id(aid) if aid else fallback
 
 
 def build_mermaid(
@@ -45,7 +56,7 @@ def build_mermaid(
         lines.append(f'  {gid}["{glabel}"]')
         lines.append(f"  {gid} --> anchor")
         for pi, p in enumerate(g.get("papers") or []):
-            pid = f"r{gi}p{pi}"
+            pid = _paper_node_id(p, f"r{gi}p{pi}")
             lines.append(f'  {pid}["{_paper_label(p)}"]')
             lines.append(f"  {pid} --> {gid}")
 
@@ -56,7 +67,7 @@ def build_mermaid(
         lines.append(f'  {gid}["{glabel}"]')
         lines.append(f"  anchor --> {gid}")
         for pi, p in enumerate(g.get("papers") or []):
-            pid = f"c{gi}p{pi}"
+            pid = _paper_node_id(p, f"c{gi}p{pi}")
             lines.append(f'  {pid}["{_paper_label(p)}"]')
             lines.append(f"  {gid} --> {pid}")
 

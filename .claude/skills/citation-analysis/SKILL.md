@@ -37,6 +37,7 @@ inputs:
 | 9 | (승인 시) `wiki_read_note(arxiv_id)` → `wiki_write_note(arxiv_id, frontmatter, body)` | anchor 노트 frontmatter 갱신. `references[*].hubs`, `cited_by[*].hubs` 필드에 매칭된 hub slug 리스트 저장. arxiv_id는 title-slug 폴더로 자동 매핑. 노트가 없으면 먼저 `paper-ingest`. |
 | 10 | (승인 시) 각 매칭된 hub에 `wiki_link(arxiv_id, hub_slug, note=cited_for)` | wikilink 누적. **target은 hub slug만** (`topics/{slug}`이 아닌 hub slug 그대로 — `[[VLM]]`). 신규 hub 승인 시 `wiki_write_note(f"topics/{slug}", frontmatter={tier:hub,...}, body)`로 먼저 hub 노트 생성. |
 | 11 | `build_citation_graph(anchor, ref_groups, cite_groups, slug={title-slug})` | 시각화 — 승인 여부와 무관하게 항상 산출. Mermaid 노트를 `graphs/{slug}.md`에 저장(옵시디언 렌더). `slug`는 vault의 title-slug. anchor frontmatter의 `slug` 필드 또는 `wiki_read_note` 응답에서 추출. |
+| 12 | (옵션) `export_citation_network()` | vault 전체 통합 네트워크. 응답에 전역 엣지 수가 임계(200) 초과로 표시되면 사용자에게 CSV/GEXF export + Cosmograph/Gephi Lite 뷰어를 권고. |
 
 ## 승인 게이트 (Step 8)
 

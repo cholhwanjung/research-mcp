@@ -38,6 +38,7 @@ vault/papers/blip-2/
 
 - **Mermaid graph** — 응답에 즉시 임베드되어 Claude Desktop / GitHub / Obsidian이 그대로 렌더.
 - **Mermaid 노트 저장** — 같은 다이어그램을 `vault/graphs/<slug>.md` 노트로도 저장. Obsidian이 노트를 열면 그래프로 렌더 (auto-layout이라 노드 겹침 없음).
+- **통합 인용 네트워크 export** — vault 전체 논문의 인용 관계를 공통 노드(논문·hub) 기준 하나의 그래프로 통합해 CSV(Cosmograph)/GEXF(Gephi Lite)로 export. 엣지 200 이하 소형이면 `graphs/unified.md` Mermaid도 함께 산출.
 
 ```mermaid
 graph LR
@@ -49,6 +50,7 @@ graph LR
 
 ### 4. 일일 인기 논문 피드
 - **Hugging Face Daily Papers** — 하루 단위 인기 논문을 upvote 순으로 정렬. `daily-digest` 스킬로 `digests/<YYYY-MM-DD>.md` 노트에 자동 누적.
+- **테크 블로그 다이제스트** — Anthropic·OpenAI·Google Gemini·DeepMind 블로그의 신규 포스트를 본문 기반(차단 소스는 RSS)으로 몇 문단 요약해 `digests/blogs-<date>.md`에 누적. seen 상태를 추적해 실행 시마다 미요약분만 소스별 최대 5개씩 처리.
 
 ---
 
@@ -56,7 +58,7 @@ graph LR
 
 ```
 sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py            (Claude Desktop · MCP)
- (fetch)     (rank/group)  (vault)  (20 tool)  │
+ (fetch)     (rank/group)  (vault)  (24 tool)  │
                                                └─  agent/ → api/ → web/  (웹 앱 · SSE 채팅)
 ```
 
@@ -91,6 +93,7 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | `daily-digest` | "오늘 트렌딩 논문", "daily digest" | HF Daily를 받아 `digests/<date>.md` 에 정리, 오늘의 흐름 요약. |
 | `wiki-lint` | "위키 점검", "vault 정리" | vault 정합성 점검 — orphan·깨진 링크·누락 교차참조·stale hub·노트 간 모순 스캔 → 승인 게이트 diff. |
 | `insight-capture` | "이 통찰 저장", "notes에 정리" | 논문을 가로질러 종합한 통찰을 `notes/<slug>.md`에 누적 (승인 게이트). |
+| `tech-blog-digest` | "테크 블로그 요약", "blog digest" | Anthropic·OpenAI·Gemini·DeepMind 신규 포스트를 본문 기반 요약해 `digests/blogs-<date>.md`에 누적 (소스별 최대 5, 자동 이월). |
 | `self-improve` | "회고 반영해줘", "self-improve" | 세션 회고·반복 실패를 분석해 `CLAUDE.md`/`docs/*` diff 제안 (승인 게이트, 메타 레이어). |
 
 ---

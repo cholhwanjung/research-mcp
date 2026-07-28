@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Callable
 
 from tools import (
+    blog_tools,
     citation_tools,
     feed_tools,
     pdf_tools,
@@ -26,6 +27,7 @@ _TOOL_MODULES = (
     wiki_tools,
     feed_tools,
     viz_tools,
+    blog_tools,
 )
 
 
