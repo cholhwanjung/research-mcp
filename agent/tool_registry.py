@@ -12,7 +12,6 @@ from typing import Callable
 from tools import (
     blog_tools,
     citation_tools,
-    feed_tools,
     pdf_tools,
     search_tools,
     viz_tools,
@@ -25,7 +24,6 @@ _TOOL_MODULES = (
     citation_tools,
     pdf_tools,
     wiki_tools,
-    feed_tools,
     viz_tools,
     blog_tools,
 )

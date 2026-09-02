@@ -8,7 +8,6 @@ from fastmcp import FastMCP
 from tools import (
     blog_tools,
     citation_tools,
-    feed_tools,
     pdf_tools,
     search_tools,
     viz_tools,
@@ -21,7 +20,6 @@ search_tools.register(mcp)
 citation_tools.register(mcp)
 pdf_tools.register(mcp)
 wiki_tools.register(mcp)
-feed_tools.register(mcp)
 viz_tools.register(mcp)
 blog_tools.register(mcp)
 

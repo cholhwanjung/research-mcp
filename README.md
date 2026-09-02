@@ -49,7 +49,6 @@ graph LR
 ```
 
 ### 4. 일일 인기 논문 피드
-- **Hugging Face Daily Papers** — 하루 단위 인기 논문을 upvote 순으로 정렬. `daily-digest` 스킬로 `digests/<YYYY-MM-DD>.md` 노트에 자동 누적.
 - **테크 블로그 다이제스트** — Anthropic·OpenAI·Google Gemini·DeepMind 블로그의 신규 포스트를 본문 기반(차단 소스는 RSS)으로 몇 문단 요약해 `digests/blogs-<date>.md`에 누적. seen 상태를 추적해 실행 시마다 미요약분만 소스별 최대 5개씩 처리.
 
 ---
@@ -58,7 +57,7 @@ graph LR
 
 ```
 sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py            (Claude Desktop · MCP)
- (fetch)     (rank/group)  (vault)  (24 tool)  │
+ (fetch)     (rank/group)  (vault)  (23 tool)  │
                                                └─  agent/ → api/ → web/  (웹 앱 · SSE 채팅)
 ```
 
@@ -74,7 +73,7 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 
 | 카테고리 | Tool |
 |---|---|
-| **fetch** | `search_papers`, `get_paper_by_id`, `get_hf_daily_papers`, `get_citation_contexts` |
+| **fetch** | `search_papers`, `get_paper_by_id`, `get_citation_contexts` |
 | **graph** | `get_references_by_citations`, `get_citations_by_citations` |
 | **artifact** | `download_paper`, `read_paper`, `extract_paper_figures`, `extract_paper_tables`, `prune_paper_figures`, `prune_paper_tables`, `render_paper_page` |
 | **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_search`, `wiki_link` |
@@ -90,7 +89,6 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 |---|---|---|
 | `paper-ingest` | "이 논문 ingest", "BLIP-2 위키에 추가" | 메타·PDF·figure·table·요약을 한 번에 vault에 누적. 분야를 기존 hub에 매핑. |
 | `citation-analysis` | "BLIP-2 흐름 보여줘", "<arxiv_id> 인용 분석" | anchor 1편 중심으로 refs/cites를 hub로 분류 + `cited_for` 채우기 + 시각화. vault 영구 누적은 사용자 승인 게이트. |
-| `daily-digest` | "오늘 트렌딩 논문", "daily digest" | HF Daily를 받아 `digests/<date>.md` 에 정리, 오늘의 흐름 요약. |
 | `wiki-lint` | "위키 점검", "vault 정리" | vault 정합성 점검 — orphan·깨진 링크·누락 교차참조·stale hub·노트 간 모순 스캔 → 승인 게이트 diff. |
 | `insight-capture` | "이 통찰 저장", "notes에 정리" | 논문을 가로질러 종합한 통찰을 `notes/<slug>.md`에 누적 (승인 게이트). |
 | `tech-blog-digest` | "테크 블로그 요약", "blog digest" | Anthropic·OpenAI·Gemini·DeepMind 신규 포스트를 본문 기반 요약해 `digests/blogs-<date>.md`에 누적 (소스별 최대 5, 자동 이월). |
@@ -224,7 +222,7 @@ vault/
 ├── notes/
 │   └── <slug>.md            # 논문 간 종합 통찰 (insight-capture)
 ├── digests/
-│   └── <YYYY-MM-DD>.md      # 일일 HF Daily 노트
+│   └── blogs-<date>.md      # 테크 블로그 다이제스트 노트
 ├── graphs/
 │   └── <slug>.md            # 인용 흐름 Mermaid 노트 (build_citation_graph)
 └── pdfs/
@@ -261,7 +259,7 @@ figures:
 | 프론트 | Next.js 16 · React 19 · Tailwind CSS v4 |
 | 추출 | PyMuPDF (PDF) + Gemini Vision (figure/table bbox) |
 | 저장 | Obsidian vault (Markdown), SQLite (대화 세션) |
-| 데이터 | arXiv · Semantic Scholar · Hugging Face Daily Papers |
+| 데이터 | arXiv · Semantic Scholar · 테크 블로그 |
 | 캐시 | 디스크 캐시 — 동일 paper_id 재요청은 0 네트워크 |
 
 ---
@@ -277,7 +275,7 @@ figures:
   → 사용자 승인 게이트 → vault 누적 + Mermaid 시각화(`graphs/` 노트) → Obsidian 그래프로 확인
 
 > 오늘 트렌딩 논문 정리해줘
-→ daily-digest → digests/2026-06-29.md 저장
+→ tech-blog-digest → digests/blogs-<date>.md 저장
 ```
 
 ---
