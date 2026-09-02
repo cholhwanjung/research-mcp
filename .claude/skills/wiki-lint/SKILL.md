@@ -40,17 +40,30 @@ L5·L6은 비용이 크므로 **같은 hub 클러스터 안으로 한정**하고
 |---|---|---|
 | 1 | scope 확정 (기본 "all") | (대화/입력) |
 | 2 | hub 목록 fetch | `wiki_list_hubs()` |
-| 3 | 대상 노트 목록 수집 — scope="all"이면 `papers`·`topics`, hub면 그 hub 백링크 논문만 | `wiki_list("papers")` + `wiki_list("topics")` |
-| 4 | 노트 본문 읽기 — 링크 그래프·frontmatter·주장 추출 (backlink 반환 tool은 없으므로 in-context로 그래프 구성) | `wiki_read_note(slug)` 반복 |
+| 3 | **링크 그래프 확보 — 1콜.** 노트별 inbound · 고아 · 깨진 링크 · 표기 불일치를 한 번에 받는다 | `wiki_backlinks()` |
+| 4 | 본문이 **실제로 필요한 노트만** 읽기 — hub 요약(L4), 모순 판정(L5), gap 판정(L7) 대상. L1·L2·L3은 Step 3 결과만으로 판정된다 | `wiki_read_note(slug)` (선별) |
 | 5 | L1~L7 판정 → 항목별 제안 diff 생성 (slug로 특정) | (LLM 추론) |
 | 6 | **리포트 + diff를 사용자에게 보여주고 승인 요청** | (대화) |
 | 7 | 승인된 항목만 반영 — 링크 추가/노트 갱신/신규 hub 생성 | `wiki_link` / `wiki_write_note` |
 | 8 | lint 로그 append | `wiki_read_note("_meta/lint-log")` + `wiki_write_note("_meta/lint-log", ...)` |
 
+## Step 3 결과 읽는 법
+`wiki_backlinks()` 응답은 네 블록이다. **L1·L2·L3은 여기서 끝난다 — 본문을 읽지 말 것.**
+
+| 블록 | 뜻 | 매핑 |
+|---|---|---|
+| `⚠️ 깨진 링크` | 본문 `[[target]]`이 실재 노트로 해석 안 됨 | **L1** 그대로 |
+| `✏️ 표기 불일치` | 해석은 되지만 본문 표기가 노트명과 다름(대소문자 등) | **L1** 하위 — 링크는 살아 있으니 우선순위 낮음 |
+| `🕳️ 고아 노트` | inbound 0 | **L2** 후보. `digests/`·`_meta/`는 원래 inbound가 없는 게 정상이라 제외 |
+| `📇 backlink` | 노트별 inbound 목록 | **L2·L3** 판정 입력. 같은 hub를 inbound로 갖는 논문 쌍 중 서로 링크 없는 것이 L3 |
+
+주의: 깨진 링크가 `digests/`에서 나오면 대개 "다이제스트가 소개했지만 아직 ingest 안 한 논문"이다 — 링크를 지우지 말고 **L7 gap** 후보로 넘긴다.
+
 ## 대규모 vault 대응 (Step 4 비용)
-backlink을 반환하는 MCP tool이 없어, 링크 그래프는 노트 본문을 읽어 in-context로 구성한다. 노트 수가 많으면 Step 4가 토큰을 많이 쓴다.
-- **1차 대응**: `scope`를 hub 하나로 좁혀 그 클러스터만 점검. 여러 번 나눠 돌린다.
-- **2회 이상** scope를 좁혀도 전체 점검이 버거우면 — 임의 우회(예: 일부 노트 건너뛰고 추정) 금지. 멈추고 사용자에게 **읽기전용 `wiki_backlinks` 도구 신설**(기존 `linker.vault_backlinks` 노출)을 새 결정 후보로 제안한다.
+Step 3이 1콜이라 링크 정합성 점검은 vault 크기와 무관하게 저렴하다. 남는 비용은 Step 4의 **선별** 본문 읽기뿐.
+- **L4/L5는 hub 클러스터 단위로** — `wiki_backlinks()`의 inbound 목록에서 그 hub에 걸린 논문만 골라 읽는다.
+- 그래도 버거우면 `scope`를 hub 하나로 좁혀 여러 번 나눠 돌린다.
+- **2회 이상** 좁혀도 안 되면 임의 우회(일부 노트 건너뛰고 추정) 금지. 멈추고 사용자에게 구조적 진단과 함께 도구 보강을 제안한다.
 
 ## lint 로그 형식 (vault/_meta/lint-log.md)
 grep 가능한 한 줄 헤더 규약 (`grep "^## \[" lint-log.md | tail -5`로 최근 이력 확인).
@@ -76,7 +89,7 @@ grep 가능한 한 줄 헤더 규약 (`grep "^## \[" lint-log.md | tail -5`로 �
 ```
 🩺 wiki-lint — scope={scope}
    스캔: 논문 {P}편 · hub {H}개 · 링크 {L}개
-   발견: {N}건 (L1 깨진링크 {a} · L2 orphan {b} · L3 누락참조 {c} · L4 stale {d} · L5 모순 {e} · L6 누락hub {f} · L7 gap {g})
+   발견: {N}건 (L1 깨진링크 {a}[+표기불일치 {a2}] · L2 orphan {b} · L3 누락참조 {c} · L4 stale {d} · L5 모순 {e} · L6 누락hub {f} · L7 gap {g})
 
 [L2] orphan: papers/{slug}
      → topics/{hub}에 링크 추가 제안
@@ -95,8 +108,8 @@ grep 가능한 한 줄 헤더 규약 (`grep "^## \[" lint-log.md | tail -5`로 �
 
 ## Failure handling
 - Step 2 `wiki_list_hubs`가 "hub 없음" → topics/에 hub가 아직 없는 초기 vault. L2·L3·L4·L5는 skip, L1(깨진링크)·L6(hub 신설 제안)만 수행.
-- Step 3 디렉토리 없음(papers/topics 비어 있음) → 점검할 노트 없음. 스캔 결과 0건으로 리포트하고 종료.
-- Step 4 노트 다수로 컨텍스트 초과 우려 → "대규모 vault 대응" 절대로. scope를 좁히도록 사용자에게 안내.
+- Step 3 `wiki_backlinks`가 "vault가 비어 있습니다" → 점검할 노트 없음. 스캔 결과 0건으로 리포트하고 종료.
+- Step 4 노트 다수로 컨텍스트 초과 우려 → "대규모 vault 대응" 절대로. L4/L5 대상을 hub 하나로 좁히도록 사용자에게 안내.
 - Step 7 `wiki_write_note`/`wiki_link` 실패 → 디스크 권한/vault 경로 확인 안내. 부분 반영됐으면 어디까지 됐는지 명시.
 - Step 8 로그 read 실패 → 첫 호출이면 헤더(`# Lint Log`)만 가진 새 파일 생성.
 

@@ -161,6 +161,85 @@ def wiki_search(query: str, top_k: int = 5, expand: bool = True) -> str:
     return "\n".join(lines)
 
 
+def _format_graph(graph) -> str:
+    from analysis.linkgraph import orphans
+
+    resolved = sum(len(v) for v in graph.forward.values())
+    broken_n = sum(len(v) for v in graph.broken.values())
+    orph = orphans(graph)
+    lines = [
+        "🕸️ wiki_backlinks — vault 전체 링크 그래프",
+        f"   노트 {len(graph.forward)} · 링크 {resolved + broken_n}"
+        f" (해석 {resolved} · 깨짐 {broken_n}) · 고아 {len(orph)}",
+    ]
+    if graph.broken:
+        lines.append(f"\n⚠️ 깨진 링크 {broken_n}건 — 실재 노트로 해석 안 됨")
+        for slug in sorted(graph.broken):
+            targets = ", ".join(f"[[{t}]]" for t in graph.broken[slug])
+            lines.append(f"  - {slug} → {targets}")
+    if graph.case_mismatch:
+        n = sum(len(v) for v in graph.case_mismatch.values())
+        lines.append(f"\n✏️ 표기 불일치 {n}건 — 해석은 되지만 본문 표기가 노트명과 다름")
+        for slug in sorted(graph.case_mismatch):
+            pairs = ", ".join(
+                f"[[{raw}]] → {real}" for raw, real in graph.case_mismatch[slug]
+            )
+            lines.append(f"  - {slug}: {pairs}")
+    if orph:
+        lines.append(f"\n🕳️ 고아 노트 {len(orph)}건 — inbound 0")
+        lines += [f"  - {slug}" for slug in orph]
+    inbound = [(slug, srcs) for slug, srcs in sorted(graph.backward.items()) if srcs]
+    if inbound:
+        lines.append(f"\n📇 backlink (inbound 있는 노트 {len(inbound)})")
+        for slug, srcs in inbound:
+            lines.append(f"  - {slug} ← {len(srcs)}: " + ", ".join(srcs))
+    lines.append("\n→ 본문이 필요한 노트만 wiki_read_note(slug)로 조회하세요.")
+    return "\n".join(lines)
+
+
+def _format_note_links(slug: str, graph, notes: dict) -> str:
+    from analysis.linkgraph import resolve_targets
+
+    key = resolve_targets(set(notes))(slug)
+    if key is None:
+        return f"❌ 노트 없음: {slug}"
+    inbound = graph.backward.get(key, [])
+    outbound = graph.forward.get(key, [])
+    lines = [
+        f"🔗 wiki_backlinks — {key}",
+        f"   inbound {len(inbound)}: " + (", ".join(inbound) or "(없음)"),
+        f"   outbound {len(outbound)}: " + (", ".join(outbound) or "(없음)"),
+    ]
+    bad = graph.broken.get(key, [])
+    if bad:
+        lines.append(f"   깨진 링크 {len(bad)}: " + ", ".join(f"[[{t}]]" for t in bad))
+    return "\n".join(lines)
+
+
+def wiki_backlinks(slug: str = "") -> str:
+    """vault `[[wikilink]]` 링크 그래프 조회 — 읽기 전용 (ADR-033).
+
+    인자 없이 부르면 vault 전체 그래프를 한 번에 반환한다: 노트별 inbound 링크,
+    inbound 0인 고아 노트, 실재 노트로 해석 안 되는 깨진 링크, 해석은 되지만 표기가
+    어긋난 링크. 노트 본문을 전수 읽지 않고 링크 정합성을 점검할 때 쓴다
+    (wiki-lint의 깨진링크·고아·누락참조 입력).
+
+    Args:
+        slug: 비우면 vault 전체 그래프. 주면 그 노트의 inbound/outbound만.
+              vault 상대경로("topics/vlm") 또는 본문 wikilink 표기("blip-2").
+    """
+    from analysis.linkgraph import build_link_graph
+    from wiki.linker import extract_links, read_vault_notes
+
+    notes = read_vault_notes()
+    if not notes:
+        return "❌ vault가 비어 있습니다 (링크 그래프 없음)."
+    adjacency = {s: extract_links(content) for s, content in notes.items()}
+    graph = build_link_graph(notes, adjacency)
+    target = slug.strip()
+    return _format_note_links(target, graph, notes) if target else _format_graph(graph)
+
+
 def wiki_link(source: str, target: str, note: str = "") -> str:
     """source 노트 본문 끝에 `- [[target]]` 라인 추가. 중복이면 skip.
 
@@ -186,4 +265,5 @@ def register(mcp) -> None:
     mcp.tool()(wiki_list_hubs)
     mcp.tool()(wiki_list)
     mcp.tool()(wiki_search)
+    mcp.tool()(wiki_backlinks)
     mcp.tool()(wiki_link)

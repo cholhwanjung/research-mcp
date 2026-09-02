@@ -57,7 +57,7 @@ graph LR
 
 ```
 sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py            (Claude Desktop · MCP)
- (fetch)     (rank/group)  (vault)  (23 tool)  │
+ (fetch)     (rank/group)  (vault)  (24 tool)  │
                                                └─  agent/ → api/ → web/  (웹 앱 · SSE 채팅)
 ```
 
@@ -76,7 +76,7 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | **fetch** | `search_papers`, `get_paper_by_id`, `get_citation_contexts` |
 | **graph** | `get_references_by_citations`, `get_citations_by_citations` |
 | **artifact** | `download_paper`, `read_paper`, `extract_paper_figures`, `extract_paper_tables`, `prune_paper_figures`, `prune_paper_tables`, `render_paper_page` |
-| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_search`, `wiki_link` |
+| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_search`, `wiki_backlinks`, `wiki_link` |
 | **viz** | `build_citation_graph` |
 
 ---

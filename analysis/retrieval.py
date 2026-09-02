@@ -4,6 +4,8 @@
 Monte-Carlo PPR을 뺀 경량판 — 어휘 매칭으로 seed를 뽑고, `[[wikilink]]` 그래프의
 1-hop 이웃(정방향 링크 + 백링크)으로 확장한다. 임베딩·외부 호출 0.
 
+링크 해석·인접 계산은 `analysis/linkgraph.py`에 있다 (wiki_backlinks tool과 공유).
+
 레이어 규약: **순수 함수만.** vault I/O 없음 — 호출측(tools/wiki_tools.py)이
 `read_vault_notes()`로 notes를, `extract_links()`로 adjacency를 만들어 넘긴다.
 그래서 analysis는 wiki를 import하지 않는다 (단방향 유지).
@@ -14,6 +16,8 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+
+from analysis.linkgraph import build_link_graph
 
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 _SLUG_BOOST = 5.0
@@ -73,28 +77,6 @@ def _snippet(content: str, matched: list[str]) -> str:
     return ("…" if start > 0 else "") + seg + "…"
 
 
-def _resolver(note_slugs: set[str]):
-    """link target → 실재 note slug. 정확 매칭 실패 시 basename(마지막 경로 조각) 유일 매칭.
-
-    ADR-023 노트는 read_vault_notes에서 `papers/<slug>/<slug>`로 키잉되지만
-    본문 wikilink는 `[[<slug>]]`로 쓰므로 basename 매칭으로 이어준다.
-    """
-    by_base: dict[str, list[str]] = {}
-    for s in note_slugs:
-        by_base.setdefault(s.split("/")[-1], []).append(s)
-
-    def resolve(target: str) -> str | None:
-        t = target.strip()
-        if t in note_slugs:
-            return t
-        cands = by_base.get(t.split("/")[-1])
-        if cands and len(cands) == 1:
-            return cands[0]
-        return None
-
-    return resolve
-
-
 def search(
     query: str,
     notes: dict[str, str],
@@ -131,22 +113,12 @@ def search(
             )
 
     if expand and hits:
-        resolve = _resolver(set(notes))
-        # 정방향(resolved) + 역방향(백링크) 인접.
-        fwd: dict[str, set[str]] = {}
-        back: dict[str, set[str]] = {}
-        for slug, targets in adjacency.items():
-            for raw in targets:
-                r = resolve(raw)
-                if r is None:
-                    continue
-                fwd.setdefault(slug, set()).add(r)
-                back.setdefault(r, set()).add(slug)
-
+        # 정방향(resolved) + 역방향(백링크) 인접 — 링크 해석은 linkgraph 공용.
+        graph = build_link_graph(notes, adjacency)
         lexical_slugs = set(hits)
         bump: dict[str, float] = {}
         for seed in lexical_slugs:
-            neighbors = fwd.get(seed, set()) | back.get(seed, set())
+            neighbors = set(graph.forward.get(seed, [])) | set(graph.backward.get(seed, []))
             for nb in neighbors:
                 if nb in lexical_slugs or nb not in notes:
                     continue
