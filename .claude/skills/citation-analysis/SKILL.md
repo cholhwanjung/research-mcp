@@ -32,10 +32,10 @@ inputs:
 | 5 | 각 ref/cite에 대해 `get_citation_contexts(anchor_id, target_id)` | 본문 인용 문맥 |
 | 6 | `wiki_list_hubs()` | **vault의 안정 hub 목록 + 정의 fetch**. LLM이 자유 토픽 생성 대신 hub 매칭에 사용. |
 | 6.5 | (코드) 각 ref를 (id·title·abstract·contexts)로 패키징 후 분류 프롬프트 구성 | Claude 입력 패키지 (hub 목록 같이 주입) |
-| 7 | (LLM 추론) | refs와 cites 각 paper를 **기존 hub 중 하나(또는 복수)에 매핑**. 자유문자열 신규 hub 생성 금지 — 매칭이 불가능한 경우만 "신규 hub 후보"로 표시 후 사용자 승인 게이트. 출력: `{paper_id, matched_hubs: [hub_slug, ...], abstract_summary, cited_for, new_hub_candidate?: {slug, summary, parent}}`. |
+| 7 | (LLM 추론) | refs와 cites 각 paper를 **기존 hub 중 하나(또는 복수)에 매핑**. **anchor 자신의 hub는 늘리지 않는다** — "이 논문을 인용한 후속이 X hub에 있다"(cited_by 흐름)는 anchor가 X에 속한다는 근거가 아니다. 인용 관계는 `references`/`cited_by`에 이미 기록되며, hub는 논문 **자신의** 주제일 때만 붙인다. 또한 자식 hub에 매핑되면 그 부모 hub는 붙이지 않는다 — 계층은 `parent`로 함의된다. 자유문자열 신규 hub 생성 금지 — 매칭이 불가능한 경우만 "신규 hub 후보"로 표시 후 사용자 승인 게이트. 출력: `{paper_id, matched_hubs: [hub_slug, ...], abstract_summary, cited_for, new_hub_candidate?: {slug, summary, parent}}`. |
 | 8 | **(승인 게이트)** | 사용자에게 미리보기 + 신규 hub 후보 함께 표시 후 vault 저장 여부 확인 — 아래 "승인 게이트" 절 |
 | 9 | (승인 시) `wiki_read_note(arxiv_id)` → `wiki_write_note(arxiv_id, frontmatter, body)` | anchor 노트 frontmatter 갱신. `references[*].hubs`, `cited_by[*].hubs` 필드에 매칭된 hub slug 리스트 저장. arxiv_id는 title-slug 폴더로 자동 매핑. 노트가 없으면 먼저 `paper-ingest`. |
-| 10 | (승인 시) 각 매칭된 hub에 `wiki_link(arxiv_id, hub_slug, note=cited_for)` | wikilink 누적. **target은 hub slug만** (`topics/{slug}`이 아닌 hub slug 그대로 — `[[VLM]]`). 신규 hub 승인 시 `wiki_write_note(f"topics/{slug}", frontmatter={tier:hub,...}, body)`로 먼저 hub 노트 생성. |
+| 10 | (승인 시) 각 매칭된 hub에 `wiki_link(arxiv_id, hub_slug, note=cited_for)` | wikilink 누적. **target은 hub slug만** (`topics/{slug}`이 아닌 hub slug 그대로 — `[[VLM]]`). 신규 hub 승인 시 `wiki_write_note(f"topics/{slug}", frontmatter={tier:hub,...}, body)`로 먼저 hub 노트 생성 — **hub 본문에서 vault에 노트가 있는 논문을 언급할 땐 반드시 `[[slug|표기]]`로 링크**한다(평문 이름 금지). hub 소속은 논문 쪽 `[[hub]]`로만 기록되므로, hub 본문이 평문이면 hub를 읽어도 소속 논문을 알 수 없다. |
 | 11 | `build_citation_graph(anchor, ref_groups, cite_groups, slug={title-slug})` | 시각화 — 승인 여부와 무관하게 항상 산출. Mermaid 노트를 `graphs/{slug}.md`에 저장(옵시디언 렌더). `slug`는 vault의 title-slug. anchor frontmatter의 `slug` 필드 또는 `wiki_read_note` 응답에서 추출. |
 | 12 | (옵션) `export_citation_network()` | vault 전체 통합 네트워크. 응답에 전역 엣지 수가 임계(200) 초과로 표시되면 사용자에게 CSV/GEXF export + Cosmograph/Gephi Lite 뷰어를 권고. |
 

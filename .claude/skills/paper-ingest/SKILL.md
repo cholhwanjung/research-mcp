@@ -28,7 +28,8 @@ inputs:
 | 5c-tab | `prune_paper_tables(arxiv_id, keep=[...], slug={title-slug})` | 선별 외 table 삭제. `keep` 매칭은 figure와 동일 — `["table_1", "table_2"]`. |
 | 5d (옵션) | `render_paper_page(arxiv_id, page=N, slug={title-slug})` | figure crop이 잡지 못한 페이지나 수식 위주 페이지를 통째로 PNG 보존. 사용자 요청 시에만. |
 | 5.5 | `wiki_list_hubs()` | **vault의 안정 hub 목록 fetch** — LLM이 paper 분야 매핑에 사용. |
-| 6 | (LLM 추론) | 본문에서 TL;DR / Key Contributions / Methods / Findings 요약 작성 (한국어) + paper 분야를 **기존 hub 중 1-3개 매칭** (자유문자열 금지). 매칭 불가 시 신규 hub 후보로 사용자 승인 받음. |
+| 6 | (LLM 추론) | 본문에서 TL;DR / Key Contributions / Methods / Findings 요약 작성 (한국어) + paper 분야를 **기존 hub 중 1-3개 매칭** (자유문자열 금지). 매칭 불가 시 신규 hub 후보로 사용자 승인 받음. **자식 hub에 매핑되면 그 부모 hub는 붙이지 않는다**(계층은 `parent`로 함의). hub는 논문 자신의 주제일 때만 — 인용 관계로 붙이지 않는다. |
+| 6.5 | (규칙) | 신규 hub를 만들게 되면 그 hub 본문에서 vault에 노트가 있는 논문은 **반드시 `[[slug\|표기]]`로 링크** — 평문 이름 금지. hub 본문이 평문이면 hub를 읽어도 소속 논문을 알 수 없다. |
 | 7 | (코드) citation velocity 계산 = `citation_count / max(1, 현재연도 - 출판연도)` | frontmatter `citation_velocity` 채움 |
 | 8 | `wiki_write_note(slug={title-slug}, frontmatter, body)` | vault에 `papers/{title-slug}/{title-slug}.md` 저장. frontmatter에 `arxiv_id` 보존 (식별자). frontmatter `figures`와 body `## Figures`엔 5c 이후 남은 figure만 포함. |
 | 9 | (선택) `citation-analysis` 스킬 위임 | references / cited_by 동적 토픽 채움. 사용자 요청 시까지 미뤄도 됨. |
