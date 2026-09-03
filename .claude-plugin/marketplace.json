@@ -1,12 +1,12 @@
 {
-  "name": "research-mcp",
+  "name": "research-mcp-local",
   "owner": { "name": "cholhwanjung" },
+  "description": "research-mcp 단일 플러그인 로컬 marketplace — user scope 설치로 모든 프로젝트 세션에서 스킬·MCP tool 사용.",
   "plugins": [
     {
       "name": "research-mcp",
       "source": "./",
-      "description": "arXiv/Semantic Scholar/HF 논문 리서치 + Obsidian vault 누적",
-      "version": "0.2.0"
+      "description": "arXiv·Semantic Scholar 논문 리서치 워크플로우 — 검색·인용 그래프·멀티모달 figure/table 추출 + Obsidian vault 영속. 24 MCP tool + 7 skill."
     }
   ]
 }
