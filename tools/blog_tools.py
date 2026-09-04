@@ -10,7 +10,7 @@ from sources import tech_blogs
 from wiki.blog_state import mark_seen as _mark_seen, seen_urls as _seen_urls
 
 
-async def get_tech_blog_posts(limit_per_source: int = 5) -> str:
+async def get_tech_blog_posts(limit_per_source: int = 10) -> str:
     """테크 블로그(Anthropic·OpenAI·Google Gemini·DeepMind)의 미요약 신규 포스트를
     소스별 최신순 최대 N개 반환합니다.
 
@@ -18,7 +18,7 @@ async def get_tech_blog_posts(limit_per_source: int = 5) -> str:
     포스트만 나옵니다. 조회만으로 seen 상태는 바뀌지 않습니다.
 
     Args:
-        limit_per_source: 소스당 최대 포스트 수 (기본 5).
+        limit_per_source: 소스당 최대 포스트 수 (기본 10).
     """
     seen = _seen_urls()
     lines = [f"🗞️ Tech Blog 신규 포스트 (소스별 최대 {limit_per_source})"]

@@ -5,8 +5,14 @@
   본문은 `<article>` 스코프로 깨끗하게 추출됨.
 - openai:    공식 RSS. 개별 글 페이지는 403 JS challenge (브라우저 UA로도 차단)
   → `body: False`, RSS description으로만 요약.
-- gemini:    blog.google Gemini 제품 RSS (redirect 1회). description에 HTML 섞임.
 - deepmind:  공식 RSS. 글 페이지에 `<article>` 없음 → `<main>` fallback.
+- google-research: research.google 공식 RSS. 논문 단위 연구 발표(헬스·지구과학·
+  시계열 등). 본문은 `<article>` 스코프로 추출되나 og:description은 없다.
+
+제외된 소스:
+- gemini (blog.google/products/gemini/rss/) — 2026-09-03 제외. 실측 20편 중 14편이
+  소비자 제품 글(사용법·구독·제휴)이고, 나머지 6편은 deepmind와 동일 원고라
+  교차 게시 중복만 남았다. deepmind가 모델 발표를 이미 싣는다.
 
 본문 추출 휴리스틱: script/style 제거 → `<article>` (없으면 `<main>`) 스코프 →
 `<p>` 중 80자 이상만 join. 새 의존성 없음 (stdlib re + html + ElementTree).
@@ -42,12 +48,12 @@ SOURCES: dict[str, dict] = {
         "body": False,  # 글 페이지 403 — RSS description만 사용
         "domains": ("openai.com", "www.openai.com"),
     },
-    "gemini": {
-        "label": "Google Gemini",
+    "google-research": {
+        "label": "Google Research",
         "kind": "rss",
-        "url": "https://blog.google/products/gemini/rss/",
+        "url": "https://research.google/blog/rss/",
         "body": True,
-        "domains": ("blog.google",),
+        "domains": ("research.google",),
     },
     "deepmind": {
         "label": "Google DeepMind",
