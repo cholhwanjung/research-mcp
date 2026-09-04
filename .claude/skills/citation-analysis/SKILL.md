@@ -67,6 +67,8 @@ vault에 영구 기록되기 직전에 사용자 응답을 대기한다. 대화�
 - **"아니오" / "no" / "n" / "ㄴ"** → step 9-10 skip. 응답에 "vault 미저장 (사용자 거부)" 명시.
 - **기타 / 무응답** → 보수적으로 skip (재요청 시 사용자가 명시).
 
+**autopilot 호출 시**: `research-autopilot`이 호출한 경우 본 게이트는 그 스킬의 "자동 승인 규칙" 표로 대체된다 — 미리보기는 출력하되 사용자 turn을 기다리지 않고 step 9-10으로 진행한다. refs/cites 쪽 신규 hub 후보는 생성하지 않고 closest 기존 hub로 매핑한다(anchor 자신의 주제만 hub 생성 대상).
+
 ## Frontmatter 갱신 (승인 시, hub-only)
 
 **자유문자열 `topic` 필드 폐기**, 대신 vault hub slug 리스트 `hubs`로 대체.

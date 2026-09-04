@@ -92,6 +92,7 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | `wiki-lint` | "위키 점검", "vault 정리" | vault 정합성 점검 — orphan·깨진 링크·누락 교차참조·stale hub·노트 간 모순 스캔 → 승인 게이트 diff. |
 | `insight-capture` | "이 통찰 저장", "notes에 정리" | 논문을 가로질러 종합한 통찰을 `notes/<slug>.md`에 누적 (승인 게이트). |
 | `tech-blog-digest` | "테크 블로그 요약", "blog digest" | Anthropic·OpenAI·Gemini·DeepMind 신규 포스트를 본문 기반 요약해 `digests/blogs-<date>.md`에 누적 (소스별 최대 5, 자동 이월). |
+| `research-autopilot` | "밤새 논문 쌓아줘", `/loop /research-autopilot` | 무인 축적 루프의 한 반복 — 대기열 유도 → 논문 1편 ingest → 인용 분석 → hub 판정 → 깨진 링크 정정을 자동 승인으로 수행하고 `_meta/autopilot-log`에 기록. 큐가 비면 vault 중심 논문의 인용 이웃으로 리필. 통찰·lint 반영은 사람 몫. `/loop`이 사용자가 멈출 때까지 반복. |
 | `self-improve` | "회고 반영해줘", "self-improve" | 세션 회고·반복 실패를 분석해 `CLAUDE.md`/`docs/*` diff 제안 (승인 게이트, 메타 레이어). |
 
 ---

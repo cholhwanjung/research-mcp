@@ -11,8 +11,8 @@ from wiki.blog_state import mark_seen as _mark_seen, seen_urls as _seen_urls
 
 
 async def get_tech_blog_posts(limit_per_source: int = 10) -> str:
-    """테크 블로그(Anthropic·OpenAI·Google Gemini·DeepMind)의 미요약 신규 포스트를
-    소스별 최신순 최대 N개 반환합니다.
+    """테크 블로그(Anthropic·OpenAI·Google DeepMind·Google Research)의 미요약 신규
+    포스트를 소스별 최신순 최대 N개 반환합니다.
 
     mark_blog_posts_seen으로 처리 완료된 URL은 제외 — 지난 실행 이후 쌓인
     포스트만 나옵니다. 조회만으로 seen 상태는 바뀌지 않습니다.
