@@ -41,7 +41,15 @@ def default_cache_dir() -> Path:
     return Path(os.environ.get("CACHE_DIR", _PROJECT_ROOT / ".cache"))
 
 
-VAULT_PATH: Path = Path(os.environ.get("OBSIDIAN_VAULT_PATH", _DEFAULT_VAULT))
-PDF_PATH: Path = Path(os.environ.get("PDF_PATH", VAULT_PATH / "pdfs"))
+def _env_path(name: str, default: Path) -> Path:
+    """경로 env — 빈 문자열은 미설정으로 본다(`.env` 로더와 같은 규칙).
+
+    플러그인 host가 `${user_config.vault_path}`를 ''로 넘기면 `Path("")` = cwd가 vault가 되던 문제.
+    """
+    return Path(os.environ.get(name) or default)
+
+
+VAULT_PATH: Path = _env_path("OBSIDIAN_VAULT_PATH", _DEFAULT_VAULT)
+PDF_PATH: Path = _env_path("PDF_PATH", VAULT_PATH / "pdfs")
 CACHE_DIR: Path = default_cache_dir()
 GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
