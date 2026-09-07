@@ -27,12 +27,32 @@ def _cache_key(url: str, params: dict | None) -> str:
     return f"{url}?{json.dumps(params, sort_keys=True)}"
 
 
+def _worth_caching(value) -> bool:
+    """캐시에 남길 응답인가. 오류 본문(str, `error`/`message` 키)과 빈 페이지(`data: []`)는 남기지 않는다.
+
+    `core.http.get`은 상태 코드와 무관하게 본문을 돌려주고, SS는 색인 지연 중 빈 `data`를 200으로
+    준다. 그대로 TTL(7일) 캐시하면 일시적 상태가 고정된다 — autopilot 실측(2026-09-06)에서
+    citationCount=2인 논문의 citations 요청이 `data: []`로 굳어 "가져올 수 없습니다"만 재생했다.
+    """
+    if not isinstance(value, dict):
+        return False
+    if "error" in value or "message" in value:
+        return False
+    if "data" in value and not value["data"]:
+        return False
+    return True
+
+
 async def ss_get(url: str, params: dict | None = None, ttl: int = SS_CACHE_TTL):
-    """SS API 호출 + 디스크 캐시. 모든 SS HTTP 진입점은 이 헬퍼를 거친다."""
+    """SS API 호출 + 디스크 캐시. 모든 SS HTTP 진입점은 이 헬퍼를 거친다.
+
+    일시적 응답(빈 페이지·오류 본문)은 돌려주되 캐시하지 않는다 — `_worth_caching`.
+    """
     return await cache.get_or_fetch(
         _cache_key(url, params),
         lambda u=url, p=params: get(u, p),
         ttl=ttl,
+        cache_if=_worth_caching,
     )
 
 

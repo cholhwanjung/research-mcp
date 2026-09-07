@@ -27,7 +27,7 @@ inputs:
 |---|---|---|
 | 1 | `get_paper_by_id(arxiv_id)` | anchor 메타 (title, abstract, citationCount) |
 | 2 | `get_references_by_citations(arxiv_id, top_k=20)` | references velocity 순 (기본) + min_velocity=10 / isInfluential OR |
-| 3 | `get_citations_by_citations(arxiv_id, top_k=20)` | 후속 인용 (direction='both'일 때만) |
+| 3 | `get_citations_by_citations(arxiv_id, top_k=20)` | 후속 인용 (direction='both'일 때만). **anchor 출판연도가 현재연도−1 이상(최근 1~2년)이면 `exclude_recent_year=False, min_velocity=0`으로 호출** — 기본 필터(`publicationDateOrYear=:<year-1>`)가 그 anchor의 인용을 전부 잘라내 빈 결과가 된다(2025년 anchor 실측). 오래된 anchor에선 기본값 유지(최근 저신호 인용이 앞에 오는 것을 막는 원래 목적) |
 | 4 | 각 ref/cite에 대해 `get_paper_by_id(target_id)` | 초록 fetch (병렬 권장) |
 | 5 | 각 ref/cite에 대해 `get_citation_contexts(anchor_id, target_id)` | 본문 인용 문맥 |
 | 6 | `wiki_list_hubs()` | **vault의 안정 hub 목록 + 정의 fetch**. LLM이 자유 토픽 생성 대신 hub 매칭에 사용. |

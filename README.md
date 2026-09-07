@@ -49,7 +49,7 @@ graph LR
 ```
 
 ### 4. 일일 인기 논문 피드
-- **테크 블로그 다이제스트** — Anthropic·OpenAI·Google Gemini·DeepMind 블로그의 신규 포스트를 본문 기반(차단 소스는 RSS)으로 몇 문단 요약해 `digests/blogs-<date>.md`에 누적. seen 상태를 추적해 실행 시마다 미요약분만 소스별 최대 5개씩 처리.
+- **테크 블로그 다이제스트** — Anthropic·OpenAI·Google Gemini·DeepMind 블로그의 신규 포스트를 본문 기반(차단 소스는 RSS)으로 몇 문단 요약해 `tech-blog-digest/<date>.md`에 누적. seen 상태를 추적해 실행 시마다 미요약분만 소스별 최대 5개씩 처리.
 
 ---
 
@@ -91,8 +91,8 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | `citation-analysis` | "BLIP-2 흐름 보여줘", "<arxiv_id> 인용 분석" | anchor 1편 중심으로 refs/cites를 hub로 분류 + `cited_for` 채우기 + 시각화. vault 영구 누적은 사용자 승인 게이트. |
 | `wiki-lint` | "위키 점검", "vault 정리" | vault 정합성 점검 — orphan·깨진 링크·누락 교차참조·stale hub·노트 간 모순 스캔 → 승인 게이트 diff. |
 | `insight-capture` | "이 통찰 저장", "notes에 정리" | 논문을 가로질러 종합한 통찰을 `notes/<slug>.md`에 누적 (승인 게이트). |
-| `tech-blog-digest` | "테크 블로그 요약", "blog digest" | Anthropic·OpenAI·Gemini·DeepMind 신규 포스트를 본문 기반 요약해 `digests/blogs-<date>.md`에 누적 (소스별 최대 5, 자동 이월). |
-| `research-autopilot` | "밤새 논문 쌓아줘", `/loop /research-autopilot` | 무인 축적 루프의 한 반복 — 대기열 유도 → 논문 1편 ingest → 인용 분석 → hub 판정 → 깨진 링크 정정을 자동 승인으로 수행하고 `_meta/autopilot-log`에 기록. 큐가 비면 vault 중심 논문의 인용 이웃으로 리필. 통찰·lint 반영은 사람 몫. `/loop`이 사용자가 멈출 때까지 반복. |
+| `tech-blog-digest` | "테크 블로그 요약", "blog digest" | Anthropic·OpenAI·Gemini·DeepMind 신규 포스트를 본문 기반 요약해 `tech-blog-digest/<date>.md`에 누적 (소스별 최대 5, 자동 이월). |
+| `research-autopilot` | "밤새 논문 쌓아줘", `/loop 10m /research-autopilot scope=graph-rag,finance-agents` | 무인 축적 루프의 한 반복 — 대기열 유도 → 논문 1편 ingest → 인용 분석 → hub 판정 → 깨진 링크 정정을 자동 승인으로 수행하고 `_meta/autopilot-log`에 기록. `scope`(hub slug)는 실행마다 필수 — 없으면 hub 목록과 함께 묻고 돌지 않으며, 전체는 `all`을 명시할 때만. 큐가 비면 scope 안 중심 논문의 인용 이웃으로 리필. 중요도 게이트(citation velocity ≥ 10 또는 vault 참조 2곳 이상, hub가 부르는 논문은 면제)로 낮은 중요도 후보는 보류. figure/table은 추출하지 않는다(텍스트 요약만, 아침에 on-demand). 한도로 끊긴 반복은 vault 상태에서 이어받는다. 정지 시 들어온 논문 요약·통찰 후보·아침 할 일을 담은 실행 보고서를 채팅과 `research-autopilot/<date>.md`에 남긴다. 통찰·lint 반영은 사람 몫. 본 세션은 디스패처(`SKILL.md`)만, 반복은 서브에이전트 워커가 `WORKER.md`를 읽어 새 컨텍스트에서. `/loop`이 사용자가 멈출 때까지 반복. |
 | `self-improve` | "회고 반영해줘", "self-improve" | 세션 회고·반복 실패를 분석해 `CLAUDE.md`/`docs/*` diff 제안 (승인 게이트, 메타 레이어). |
 
 ---
@@ -222,8 +222,10 @@ vault/
 │   └── <hub-slug>.md        # 안정 hub — 백링크로 논문이 자동 집계
 ├── notes/
 │   └── <slug>.md            # 논문 간 종합 통찰 (insight-capture)
-├── digests/
-│   └── blogs-<date>.md      # 테크 블로그 다이제스트 노트
+├── tech-blog-digest/
+│   └── <date>.md            # 테크 블로그 다이제스트 노트
+├── research-autopilot/
+│   └── <date>.md            # autopilot 실행 보고서 (정지 시 생성)
 ├── graphs/
 │   └── <slug>.md            # 인용 흐름 Mermaid 노트 (build_citation_graph)
 └── pdfs/
@@ -276,7 +278,7 @@ figures:
   → 사용자 승인 게이트 → vault 누적 + Mermaid 시각화(`graphs/` 노트) → Obsidian 그래프로 확인
 
 > 오늘 트렌딩 논문 정리해줘
-→ tech-blog-digest → digests/blogs-<date>.md 저장
+→ tech-blog-digest → tech-blog-digest/<date>.md 저장
 ```
 
 ---

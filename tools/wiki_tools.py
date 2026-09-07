@@ -9,6 +9,8 @@ slug 규약 (ADR-016):
 
 from __future__ import annotations
 
+import re
+
 import json
 from pathlib import Path
 
@@ -80,7 +82,7 @@ def wiki_write_note(slug: str, frontmatter: dict | str | None = None, body: str 
 
 
 def wiki_list(prefix: str = "papers") -> str:
-    """vault 안 디렉토리의 노트 목록 (papers/topics/digests 등).
+    """vault 안 디렉토리의 노트 목록 (papers/topics/tech-blog-digest 등).
 
     Args:
         prefix: vault root 기준 디렉토리. 기본 'papers'.
@@ -241,7 +243,7 @@ def wiki_backlinks(slug: str = "") -> str:
 
 
 def wiki_link(source: str, target: str, note: str = "") -> str:
-    """source 노트 본문 끝에 `- [[target]]` 라인 추가. 중복이면 skip.
+    """source 노트 본문 끝에 `- [[target]]` 라인 추가. target으로의 링크가 이미 있으면(표기·설명이 달라도) skip.
 
     Args:
         source: 링크를 추가할 노트 slug.
@@ -252,9 +254,11 @@ def wiki_link(source: str, target: str, note: str = "") -> str:
     if not path.is_file():
         return f"❌ source 노트 없음: {source}"
     existing = read_note(path)
-    line = f"- [[{target}]]" + (f" — {note}" if note else "")
-    if line in existing:
+    # 멱등: target으로의 wikilink가 어떤 표기([[t]] / [[t|별칭]] / [[t#절]])로든 이미 있으면 no-op.
+    # 줄 전체 일치로 판정하면 note 문구만 달라도 중복 추가된다 (autopilot 실측 2026-09-06).
+    if re.search(rf"\[\[{re.escape(target)}(?:[|#][^\]]*)?\]\]", existing):
         return f"⏭️ 이미 링크 있음: {source} → {target}"
+    line = f"- [[{target}]]" + (f" — {note}" if note else "")
     write_note(path, existing.rstrip() + "\n" + line + "\n")
     return f"🔗 링크 추가: {source} → {target}"
 

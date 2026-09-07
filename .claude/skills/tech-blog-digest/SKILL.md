@@ -1,6 +1,6 @@
 ---
 name: tech-blog-digest
-description: Anthropic/OpenAI/Google DeepMind/Google Research 테크 블로그의 미요약 신규 포스트를 소스별 최대 10개씩 가져와 본문(불가 소스는 RSS) 기반 몇 문단 한국어 요약으로 vault `digests/blogs-{date}.md`에 누적한다. seen 상태를 추적해 실행 시점까지 쌓인 새 포스트만 처리.
+description: Anthropic/OpenAI/Google DeepMind/Google Research 테크 블로그의 미요약 신규 포스트를 소스별 최대 10개씩 가져와 본문(불가 소스는 RSS) 기반 몇 문단 한국어 요약으로 vault `tech-blog-digest/{date}.md`에 누적한다. seen 상태를 추적해 실행 시점까지 쌓인 새 포스트만 처리.
 trigger:
   - "테크 블로그 요약"
   - "blog digest"
@@ -22,7 +22,7 @@ inputs:
 | 1 | `get_tech_blog_posts()` | 소스별 미요약 신규 포스트 목록 (최신순, seen 제외) |
 | 2 | 본문 지원 소스의 각 포스트에 `read_blog_post(url)` | 본문 텍스트. OpenAI는 skip — step 1의 RSS 요약 사용 |
 | 3 | (LLM 추론) | 포스트당 **2-3문단 한국어 요약**. OpenAI는 RSS 발췌 기반 1문단 |
-| 4 | `wiki_write_note(f"digests/blogs-{date}", frontmatter, body)` | vault 저장. 같은 날 재실행이면 기존 노트 `wiki_read_note` 후 섹션 append |
+| 4 | `wiki_write_note(f"tech-blog-digest/{date}", frontmatter, body)` | vault 저장. 같은 날 재실행이면 기존 노트 `wiki_read_note` 후 섹션 append |
 | 5 | `mark_blog_posts_seen([이번에 다룬 url 전부])` | 처리 확정 — 다음 실행에서 제외 |
 
 **step 5는 반드시 step 4 성공 후.** 노트 저장 전에 seen을 남기면 포스트가 유실된다.
@@ -60,7 +60,7 @@ post_count: 8
 ## Output format (사용자 응답)
 
 ```
-🗞️ Tech Blog Digest 완료: digests/blogs-{date}.md
+🗞️ Tech Blog Digest 완료: tech-blog-digest/{date}.md
    요약: anthropic {n}편 · openai {n}편 · deepmind {n}편 · google-research {n}편
    이월: {소스별 "신규 N건 중 M건"의 N-M 합이 0보다 크면 명시}
 ```

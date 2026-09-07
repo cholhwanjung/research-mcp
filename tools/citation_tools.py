@@ -119,8 +119,20 @@ async def get_citations_by_citations(
     )
 
     if not cits:
-        suffix = f" (publicationDateOrYear={pub_date_filter})" if pub_date_filter else ""
-        return f"'{paper_title}'의 인용 논문을 가져올 수 없습니다.{suffix}"
+        # 도구 실패가 아니라 0건이다 — 호출자(autopilot 워커 등)가 실패로 오판하지 않게
+        # SS 인용수·적용된 필터·재시도 힌트를 함께 낸다.
+        if total == 0:
+            return f"'{paper_title}' — 인용 논문 0건 (SS citationCount=0)."
+        filters = ["survey 제외"]
+        if pub_date_filter:
+            filters.insert(0, f"최근 1년 제외(publicationDateOrYear={pub_date_filter})")
+            hint = "exclude_recent_year=False로 다시 부르면 최근 1년 인용이 포함된다"
+        else:
+            hint = "SS 인용 색인 지연이 유력 — 나중에 다시 시도"
+        return (
+            f"'{paper_title}' — 인용 논문 0건 반환 (SS citationCount={total}). "
+            f"{' · '.join(filters)} 후 남은 것이 없거나 SS 인용 색인 지연. 도구 실패가 아니다. {hint}."
+        )
 
     header_suffix = "velocity 순" if sort == "velocity" else "인용수 순"
     return _render_sorted_list(

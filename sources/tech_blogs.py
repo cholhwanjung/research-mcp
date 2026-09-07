@@ -149,29 +149,36 @@ def parse_anthropic_news(html_text: str) -> list[dict]:
 def extract_body(html_text: str, max_chars: int = 12000) -> str:
     """글 페이지 HTML → 본문 문단 텍스트 (요약 입력용).
 
-    script/style 제거 → <article> (없으면 <main>) 스코프 → <p> 80자 이상만.
-    본문을 못 찾으면 빈 문자열.
+    script/style 제거 → <article>, <main> 순으로 스코프를 시도해 **80자 이상 문단이
+    하나라도 나오는 첫 스코프**를 채택. 둘 다 없으면 문서 전체. 본문을 못 찾으면 빈 문자열.
+
+    첫 <article>이 본문이 아닐 수 있다 — DeepMind 일부 페이지는 관련 글 카드
+    (`<article class="card card-blog …">`, <p> 0개)가 본문보다 앞에 온다 (2026-09-07 실측).
     """
     cleaned = re.sub(
         r"<(script|style)[^>]*>.*?</\1>", "", html_text, flags=re.DOTALL | re.IGNORECASE
     )
-    scope = cleaned
+    scopes: list[str] = []
     for tag in ("article", "main"):
         m = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", cleaned, flags=re.DOTALL | re.IGNORECASE)
         if m:
-            scope = m.group(1)
-            break
-    paras: list[str] = []
-    total = 0
-    for p in re.findall(r"<p[^>]*>(.*?)</p>", scope, flags=re.DOTALL | re.IGNORECASE):
-        text = _strip_tags(p)
-        if len(text) < _MIN_PARA_LEN:
-            continue
-        paras.append(text)
-        total += len(text)
-        if total >= max_chars:
-            break
-    return "\n\n".join(paras)[:max_chars]
+            scopes.append(m.group(1))
+    if not scopes:
+        scopes = [cleaned]
+    for scope in scopes:
+        paras: list[str] = []
+        total = 0
+        for p in re.findall(r"<p[^>]*>(.*?)</p>", scope, flags=re.DOTALL | re.IGNORECASE):
+            text = _strip_tags(p)
+            if len(text) < _MIN_PARA_LEN:
+                continue
+            paras.append(text)
+            total += len(text)
+            if total >= max_chars:
+                break
+        if paras:
+            return "\n\n".join(paras)[:max_chars]
+    return ""
 
 
 def extract_og(html_text: str) -> dict:

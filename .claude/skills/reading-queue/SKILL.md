@@ -53,7 +53,7 @@ inputs:
 
 | # | 동작 | 도구 |
 |---|---|---|
-| 1 | 깨진 링크 수집 (S1) — 출처 노트가 `papers/`인지 `digests/`인지 기록 (P3/P4 구분에 쓰임) | `wiki_backlinks()` |
+| 1 | 깨진 링크 수집 (S1) — 출처 노트가 `papers/`인지 `tech-blog-digest/`인지 기록 (P3/P4 구분에 쓰임) | `wiki_backlinks()` |
 | 2 | hub 목록 + 본문 읽기 (S2) — hub는 15개 안팎·노트당 30줄 수준이라 저렴 | `wiki_list_hubs()` → `wiki_read_note(hub)` |
 | 3 | 통찰 노트의 열린 질문 수집 (S3) | `wiki_list("notes")` → `wiki_read_note` |
 | 4 | S2 판정 — vault 기수록 여부(뜻으로 대조) → 개념어 제외 | (LLM 추론) |

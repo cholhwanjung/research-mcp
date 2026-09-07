@@ -36,6 +36,7 @@ async def get_or_fetch(
     fetcher: Callable[[], Awaitable[Any]],
     ttl: int | None = None,
     force_refresh: bool = False,
+    cache_if: Callable[[Any], bool] | None = None,
 ) -> Any:
     """`key`로 디스크 캐시 조회. miss 또는 force_refresh면 `fetcher()` 호출 후 저장.
 
@@ -44,12 +45,20 @@ async def get_or_fetch(
         fetcher:       miss 시 호출할 async 함수. 반환값은 JSON 직렬화 가능해야 함.
         ttl:           초 단위 만료. None이면 무한.
         force_refresh: True면 디스크 무시 + fetcher 호출 + 덮어쓰기.
+        cache_if:      fetch 결과를 저장할지 판정하는 술어. False면 값은 돌려주되 디스크에
+                       남기지 않아 다음 호출이 다시 가져온다 (빈 페이지·오류 본문 같은
+                       일시적 상태를 TTL 동안 고정하지 않기 위해). None이면 항상 저장.
     """
     path = _key_to_path(key)
     if not force_refresh and path.is_file() and _is_fresh(path, ttl):
-        return json.loads(path.read_text(encoding="utf-8"))
+        cached = json.loads(path.read_text(encoding="utf-8"))
+        if cache_if is None or cache_if(cached):
+            return cached
+        # 술어를 통과하지 못하는 값이 남아 있다(술어 도입 전 저장분) — miss로 취급해 다시 가져온다.
 
     value = await fetcher()
+    if cache_if is not None and not cache_if(value):
+        return value
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
     return value

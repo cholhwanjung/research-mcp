@@ -19,7 +19,7 @@ inputs:
 | 1 | `get_paper_by_id(arxiv_id)` | 메타데이터 + Citation 수 + TL;DR. **title 확보**. |
 | 2 | (코드) title → slug 변환 | title을 사람·grep 친화 slug로. 예: `"BLIP-2: ..."` → `"blip-2"`. 이후 모든 vault 작업은 이 slug를 사용. |
 | 3 | `download_paper(arxiv_id)` | PDF를 `pdfs/{arxiv_id}.pdf`에 저장 (캐시 hit이면 skip). PDF는 arxiv_id로 식별. |
-| 4 | `read_paper(arxiv_id, max_pages=0)` | 전문 텍스트 추출 (요약 입력) |
+| 4 | `read_paper(arxiv_id, max_pages=0)` | 전문 텍스트 추출 (요약 입력). **`research-autopilot`이 호출한 경우 `max_pages=15`** — 텍스트 요약만 쓰므로 본문 앞 15쪽이면 충분하고, 부록·참고문헌까지 받으면 워커 컨텍스트를 편당 수만 토큰 더 쓴다 |
 | 4.5 | (코드) PDF 페이지 수 확인 → **대용량 게이트** | `pdfs/{arxiv_id}.pdf`의 페이지 수를 세어 `page_count` 확보. **`page_count >= PAGE_LIMIT`(기본 20)** 이면 5a-fig/5a-tab/5b/5c 전체를 **skip** (아래 "대용량 PDF 게이트" 참조). 미만이면 정상 진행. |
 | 5a-fig | `extract_paper_figures(arxiv_id, slug={title-slug})` | *(게이트 통과 시에만)* Vision으로 bbox 추정 후 clip. 파일명은 `fig_{N}_{caption-slug}.png` — 예: `fig_1_overview-of-blip-2s-framework.png`. vector-only figure도 시각적으로 인식. **`GOOGLE_API_KEY` 환경변수 필수**. |
 | 5a-tab | `extract_paper_tables(arxiv_id, slug={title-slug})` | *(게이트 통과 시에만)* Vision으로 table bbox 추정 후 clip. 학회 layout(caption above/below) 자동 인식. 파일명은 `table_{N}_{caption-slug}.png`. |
@@ -61,6 +61,7 @@ except Exception:
 **게이트 판정**:
 - `page_count < PAGE_LIMIT` → 정상 진행 (5a-fig/5a-tab/5b/5c 실행).
 - `page_count >= PAGE_LIMIT` → **figure/table 관련 5a·5b·5c 단계 전부 skip.** 텍스트 요약(6~8단계)은 그대로 수행. frontmatter `figures`는 빈 리스트, `figures_skipped: true`, `page_count` 기록. body `## Figures`엔 생략 사유 한 줄만 남긴다.
+- **`research-autopilot`이 호출한 경우 → 페이지 수와 무관하게 5a·5b·5c 전부 skip.** 무인 실행이라 5b 선별 판단이 얕고 Vision bbox 추정이 반복 시간을 지배한다. frontmatter는 위와 같이(`figures: []`, `figures_skipped: true`), `## Figures`엔 "_Figure/table 추출 생략됨 (무인 수집). 필요 시 on-demand 추출 가능._" 한 줄. 아침에 사용자가 원하는 논문만 override 경로로 5a~5c를 실행해 노트를 갱신한다. Step 4도 `max_pages=15`로 부른다(위 표).
 
 **override (게이트 무시)**:
 - 사용자가 명시적으로 figure/table 추출을 요청한 경우(예: "figure까지 다 뽑아줘", "표 이미지도 저장해줘") → 페이지 수와 무관하게 정상 진행.
