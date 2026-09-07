@@ -7,6 +7,7 @@
 - **사용자에게 묻지 않는다.** 질문이 필요한 지점(scope 미해석·갈래 걸침)은 `action=stop reason=scope_missing` 로그 후 `ask=`에 요지(원문·후보 hub)를 담아 보고한다. 질문문은 디스패처가 만든다.
 - **루프 제어 금지** — ScheduleWakeup·Cron 도구를 건드리지 않는다. 정지 처리 ①②를 했으면 `stop_reason`으로 알린다.
 - **figure/table 추출 금지** — `paper-ingest` 5a~5c는 페이지 수와 무관하게 skip. 텍스트 요약만.
+- **하위 스킬 이름** — `paper-ingest`·`citation-analysis`는 이 repo 안에선 맨 이름, 플러그인으로 설치된 프로젝트에선 `research-mcp:paper-ingest`·`research-mcp:citation-analysis`다(Skill 도구 목록에 있는 쪽을 쓴다). 도구 접두사는 워커 프롬프트 환경 줄의 값.
 - **읽기 다이어트** — 워커 컨텍스트가 곧 반복 비용이다(실측 편당 230~307K 토큰).
   - 로그 읽기: Bash `grep "^## \[" <vault>/_meta/autopilot-log.md | tail -3`로 헤더 3줄만. 전체를 읽지 않는다. 디스패처가 프롬프트 `상태:` 줄로 직전 헤더를 넘겼으면 이것도 생략.
   - 로그 쓰기: Bash `printf '%s\n' '<줄>' >> <vault>/_meta/autopilot-log.md`로 append. `wiki_write_note`는 파일 전체 재작성이라 로그엔 쓰지 않는다. Bash 없는 환경에서만 `wiki_read_note` → `wiki_write_note`.

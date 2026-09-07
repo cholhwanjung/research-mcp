@@ -23,6 +23,7 @@ inputs:
        /loop 10m /research-autopilot graph rag랑 금융 트레이딩 에이전트              자연어도 된다 — 첫 tick이 hub로 해석해 확정 slug를 보여주고 고정
        /loop 10m /research-autopilot                                              scope 없음 → 첫 tick이 hub 목록을 보이며 묻는다. 답할 때까지 돌지 않는다
        /loop /research-autopilot scope=…                                          지켜보며 돌릴 때만 — 동적 self-pacing
+플러그인 다른 프로젝트에선 스킬 이름이 /research-mcp:research-autopilot (하위 스킬도 research-mcp: 접두사, 도구는 mcp__plugin_research-mcp_research__*). 동작·vault는 같다
 
 정지   채팅으로 "autopilot 멈춰"          → 정지 처리 + 루프 종료(cron 삭제)
        _meta/autopilot.md 의 stop: true  → 다음 tick에서 정지 처리 + 루프 종료 (Obsidian에서 편집. 다른 세션에서 멈출 때도 이 길)
@@ -102,7 +103,7 @@ scope는 **hub slug의 집합**(`wiki_list_hubs()`에 있는 것만, 자식 hub 
 디스패처(D0)·워커(Step 1.5·7) 어느 쪽이 시작하든 같은 절차. ①②는 시작한 쪽이, ③④는 **디스패처**가 한다.
 1. 로그 append: `## [ts] autopilot | iter=N | action=stop | reason=…` + `processed=… run_started=… scope=… scope_input="…"` — 최종 카운터는 여기 남는다.
 2. 제어 노트 `stop: true`, `scope: []`, `scope_input: ''`, `run_started: ''`, `processed: 0`, `consecutive_failures: 0`(`max_papers`·`min_velocity`·`frontier_anchors`·본문 절은 유지). `run_started`를 남기면 다음 실행 보고서가 두 실행을 합산한다. **카운터는 정지 기록을 경계로 리셋된다** — 시간 기준 리셋은 없다.
-3. 루프 종료: 고정 간격이면 `CronList`에서 `/research-autopilot` 프롬프트의 job을 모두 `CronDelete` → 다시 `CronList`로 확인, 남았으면 한 번 더 → 지운 id를 제어 노트 `deleted_jobs`에 기록. 동적이면 `stop`.
+3. 루프 종료: 고정 간격이면 `CronList`에서 프롬프트에 `research-autopilot`이 들어간 job(맨 이름·`research-mcp:` 접두사 모두)을 전부 `CronDelete` → 다시 `CronList`로 확인, 남았으면 한 번 더 → 지운 id를 제어 노트 `deleted_jobs`에 기록. 동적이면 `stop`.
 4. 실행 보고서(아래 절).
 
 `reason` ∈ `user | max_papers | consecutive_failures | queue_exhausted | control_parse_error`. `scope_missing`은 정지가 아니라 **대기**다 — 로그 한 줄(첫 회)만 남기고 ②③④를 하지 않는다. 채팅 "autopilot 멈춰"도 ①~④. **이미 정지 기록이 있는 상태의 "멈춰"는 로그 없이 ③만.**
