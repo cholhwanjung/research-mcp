@@ -27,6 +27,48 @@ def _cache_key(url: str, params: dict | None) -> str:
     return f"{url}?{json.dumps(params, sort_keys=True)}"
 
 
+def response_error(data) -> str | None:
+    """SS 상세 조회 응답의 오류 종류. 정상(`paperId` 있음)이면 None.
+
+    - "not_found": 404 본문 `{"error": "Paper with id … not found"}` — 정말 없는 논문
+    - "rejected":  `{"message": …}` — 429 호출 한도·403 등 요청 거절. 논문 유무와 무관
+    - "error":     그 밖의 `{"error": …}` — 잘못된 ID 형식 등
+    - "transport": dict가 아닌 본문(최종 429 텍스트·HTML 오류 페이지) 또는 `paperId` 없는 dict
+
+    `core.http.get`은 상태 코드를 버리고 본문만 돌려주므로 본문 형태로 되짚는다. 호출측이
+    "재시도할 것"과 "정말 없는 것"을 구분해야 무인 실행이 호출 한도를 없는 논문으로 오진하지 않는다.
+    """
+    if not isinstance(data, dict):
+        return "transport"
+    if "paperId" in data:
+        return None
+    if "error" in data:
+        return "not_found" if "not found" in str(data["error"]).lower() else "error"
+    if "message" in data:
+        return "rejected"
+    return "transport"
+
+
+def lookup_error_message(paper_id: str, data) -> str | None:
+    """상세 조회 guard용 사용자 메시지. 정상이면 None. `❌`는 미매핑, `⏳`는 재시도 대상."""
+    kind = response_error(data)
+    if kind is None:
+        return None
+    if kind == "not_found":
+        return f"❌ 논문을 찾을 수 없습니다: {paper_id}"
+    if kind == "rejected":
+        return (
+            f"⏳ Semantic Scholar가 요청을 거절했습니다 (호출 한도 429 등): {paper_id} — "
+            f"없는 논문이 아닙니다. 잠시 후 다시 시도하세요. ({data.get('message')})"
+        )
+    if kind == "error":
+        return f"⚠️ Semantic Scholar 오류 응답: {paper_id} — {data.get('error')}"
+    return (
+        f"⏳ Semantic Scholar 응답이 비정상입니다 (일시 장애·최종 429 텍스트): {paper_id} — "
+        f"없는 논문이 아닙니다. 잠시 후 다시 시도하세요."
+    )
+
+
 def _worth_caching(value) -> bool:
     """캐시에 남길 응답인가. 오류 본문(str, `error`/`message` 키)과 빈 페이지(`data: []`)는 남기지 않는다.
 

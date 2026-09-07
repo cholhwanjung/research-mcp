@@ -11,6 +11,7 @@ from analysis.ranking import render_sorted_list as _render_sorted_list
 from sources.semantic_scholar import (
     SS_BASE,
     fetch_network_papers as _fetch_network_papers,
+    lookup_error_message as _lookup_error_message,
     get_contexts as _get_contexts,
     resolve_id as _resolve_id,
     ss_get as _ss_get,
@@ -41,8 +42,9 @@ async def get_references_by_citations(
         f"{SS_BASE}/{_resolve_id(paper_id)}",
         {"fields": "paperId,title,referenceCount"},
     )
-    if isinstance(detail, str) or "paperId" not in detail:
-        return f"❌ 논문을 찾을 수 없습니다: {paper_id}"
+    err = _lookup_error_message(paper_id, detail)
+    if err:
+        return err
 
     pid = detail["paperId"]
     paper_title = detail.get("title", paper_id)
@@ -99,8 +101,9 @@ async def get_citations_by_citations(
         f"{SS_BASE}/{_resolve_id(paper_id)}",
         {"fields": "paperId,title,citationCount"},
     )
-    if isinstance(detail, str) or "paperId" not in detail:
-        return f"❌ 논문을 찾을 수 없습니다: {paper_id}"
+    err = _lookup_error_message(paper_id, detail)
+    if err:
+        return err
 
     pid = detail["paperId"]
     paper_title = detail.get("title", paper_id)

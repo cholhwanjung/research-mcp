@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from analysis.format import fmt_paper as _fmt_paper
 from core.filter import drop_surveys as _drop_surveys
 from core.http import get as _get
+from sources.semantic_scholar import lookup_error_message as _lookup_error_message
 from sources.arxiv import parse_arxiv as _parse_arxiv
 from sources.semantic_scholar import (
     SS_BASE,
@@ -104,8 +105,9 @@ async def get_paper_by_id(paper_id: str) -> str:
     )
     data = await _ss_get(f"{SS_BASE}/{_resolve_id(paper_id)}", {"fields": fields})
 
-    if isinstance(data, str) or "paperId" not in data:
-        return f"❌ 논문을 찾을 수 없습니다: {paper_id}"
+    err = _lookup_error_message(paper_id, data)
+    if err:
+        return err
 
     lines = [f"📄 {data.get('title', 'Untitled')}\n"]
 
