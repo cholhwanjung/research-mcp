@@ -1,150 +1,149 @@
 ---
 name: research-autopilot
-description: 무인 축적 루프의 한 반복(논문 1편). vault에서 대기열을 유도해 최우선 미수록 논문 1편을 ingest → citation-analysis → hub 판정 → 깨진 링크 정정까지 자동 승인으로 수행하고 `_meta/autopilot-log`에 기록한다. 대기열이 비면 vault 중심 논문의 인용 이웃에서 frontier를 리필한다. `/loop /research-autopilot`으로 반복 호출 — 사용자가 명시적으로 멈출 때까지.
+description: 무인 축적 루프의 한 반복(논문 1편)을 디스패처로 돈다 — 게이트 → 서브에이전트 워커(대기열 유도→ingest 텍스트 요약→citation-analysis→hub 판정→깨진 링크 정정, figure/table 미추출, 절차는 `WORKER.md`) → 보고 릴레이. `scope`는 실행마다 필수(없으면 hub 목록과 함께 묻고 돌지 않음, 전체는 `all` 명시). `/loop 10m /research-autopilot scope=…`으로 사용자가 멈출 때까지 반복, 정지 시 실행 보고서를 채팅 + `research-autopilot/<날짜>.md`에.
 trigger:
   - "autopilot"
   - "밤새 논문 쌓아줘"
   - "무인 ingest 루프"
   - "research-autopilot"
 inputs:
-  - 'max_papers (int, 선택) — 이번 실행(루프 전체)에서 처리할 최대 논문 수. 기본 0 = 무제한. `_meta/autopilot.md` frontmatter로도 지정.'
+  - 'scope (string, **필수**) — 이번 실행에서 다룰 hub. slug(`scope=graph-rag,finance-agents`)나 자연어 모두 된다(뜻으로 hub에 대응, 자식 hub 자동 포함). 전체는 "all"(또는 "전체")을 명시. 기본값 없음 — 인자에도 제어 노트에도 없으면 묻기만 하고 돌지 않는다.'
+  - 'max_papers (int, 선택) — 이번 실행 최대 처리 편수. 기본 0 = 무제한. 제어 노트에 저장되며 정지해도 남는다.'
 ---
 
 ## When to invoke
 사용자가 자리를 비운 사이(밤새) vault를 계속 채우고 싶을 때. 본 스킬은 **한 반복 = 논문 1편**만 처리하고 끝난다. 반복은 `/loop`이 연다 — 스킬 안에서 while 루프를 돌리지 않는다.
 
-부르지 말 것:
-- 특정 논문 1편을 지금 넣는 것 → `paper-ingest`.
-- 대기열을 보기만 하는 것 → `reading-queue`.
-- 정합성 점검·hub 요약 갱신 → `wiki-lint` (autopilot은 lint를 반영하지 않는다).
+부르지 말 것: 특정 논문 1편을 지금 넣는 것은 `paper-ingest`, 대기열을 보기만 하는 것은 `reading-queue`, 정합성 점검·hub 요약 갱신은 `wiki-lint`(autopilot은 lint를 반영하지 않는다).
 
 ## 시작·정지 (운용)
 
 ```
-시작   /loop /research-autopilot         동적 self-pacing (권장). 한 반복이 끝나면 최소 지연(60초)으로 다음 반복 예약
-       /loop 30m /research-autopilot     고정 간격. 이전 반복이 안 끝났으면 다음 tick은 밀린다(겹치지 않음). 7일 후 자동 만료
+시작   /loop 10m /research-autopilot scope=graph-rag,finance-agents max_papers=10   권장 — 고정 간격 + scope(+예산)를 프롬프트에 고정
+       /loop 10m /research-autopilot graph rag랑 금융 트레이딩 에이전트              자연어도 된다 — 첫 tick이 hub로 해석해 확정 slug를 보여주고 고정
+       /loop 10m /research-autopilot                                              scope 없음 → 첫 tick이 hub 목록을 보이며 묻는다. 답할 때까지 돌지 않는다
+       /loop /research-autopilot scope=…                                          지켜보며 돌릴 때만 — 동적 self-pacing
 
-정지   채팅으로 "autopilot 멈춰"          → 루프 종료 (동적: ScheduleWakeup stop / 고정: CronDelete)
-       _meta/autopilot.md 의 stop: true  → 다음 반복 시작 시 종료 (Obsidian에서 편집)
+정지   채팅으로 "autopilot 멈춰"          → 정지 처리 + 루프 종료(cron 삭제)
+       _meta/autopilot.md 의 stop: true  → 다음 tick에서 정지 처리 + 루프 종료 (Obsidian에서 편집. 다른 세션에서 멈출 때도 이 길)
+       자동 정지(max_papers·큐 소진·연속 실패 3) → 마지막 반복 직후 정지 처리 + 루프 종료. 다음 tick을 기다리지 않는다
        세션 종료                          → 루프는 세션에만 산다
 
-전제   세션이 살아 있어야 한다 — Mac 잠자기 방지(예: caffeinate -dimsu), 데스크톱 앱 유지
+재개   새로 /loop을 건다. scope는 다시 준다 — 정지된 실행의 scope·카운터는 이월되지 않는다 (max_papers·min_velocity는 남는다)
+
+보고   정지 시 자동 — 실행 보고서(들어온 논문 요약·통찰 후보·종합·아침 할 일)를 채팅에 내고 research-autopilot/<날짜>.md 에 저장
+       채팅으로 "autopilot 보고"          → 정지하지 않고 현재 실행 기준 보고서만 (파일 저장 없음)
+
+전제   세션이 살아 있어야 한다 — Mac 잠자기 방지(예: caffeinate -dimsu), 데스크톱 앱 유지. 한 vault에 루프는 한 세션만
 ```
 
-동적 모드에서 반복을 마칠 때: 정지 조건이 아니면 `delaySeconds=60`으로 같은 프롬프트를 재예약한다(기다릴 외부 상태가 없다 — 작업 자체가 pacing). 정지 조건이면 `stop`으로 루프를 끝내고 사유를 응답에 적는다.
+**간격이 10분인 이유.** 한도에 걸린 turn은 거부되고 스킬은 감지할 수 없다. 고정 간격 cron은 창이 풀리면 스스로 재개되지만(동적 모드는 끊긴다) **거부된 tick도 공짜가 아니다** — 그 시점엔 0 토큰이어도 tick 프롬프트(이 파일 전체)가 대화에 남아 회복 첫 turn에 한꺼번에 들어온다(실측: 2시간 18분 대기의 tick 29회 → 71만 토큰). 워커 1회는 5~10분(실측 2026-09-06, n=10, 평균 7.8분)이고 워커 실행 중 tick은 쌓이지 않고 하나만 대기하므로, 10분이면 반복 사이 공백이 몇 분이고 한도 대기 2시간의 tick도 14회 × 이 파일 크기에 그친다. 그래서 이 파일은 디스패처 분량만 두고 워커 절차는 `WORKER.md`에 — **이 파일을 키우지 않는다.**
 
-## 자동 승인 규칙 — 무엇을 스스로 결정하고 무엇을 남기는가
-원칙: **저장 축은 자동, 판단 축은 사람.** 하위 스킬의 승인 게이트(`paper-ingest` Step 6 신규 hub, `citation-analysis` Step 8)는 본 표로 대체되며 **사용자 turn을 기다리지 않는다.** 미리보기는 출력하되 정지하지 않는다.
+**cron은 정지 처리에서 지운다.** 살려두면 tick마다 이 파일이 프롬프트로 다시 들어온다(D0는 스폰만 막는다). cron이 살아 있는 경우는 둘뿐이다 — 정지 기록 없이 끊긴 한도 거부와 `scope_missing` 대기. 지운 뒤 `CronList`로 확인하고 지운 id는 제어 노트 `deleted_jobs`에 남긴다 — 삭제가 실패해도 다음 tick의 D0가 id로 알아보고 다시 지운다.
 
-| 축 | autopilot 판정 | 남기는 것 |
-|---|---|---|
-| 논문 노트 저장 (`paper-ingest` Step 8) | 자동 | 로그 |
-| `references`/`cited_by` frontmatter + hub wikilink (`citation-analysis` Step 9-10) | 자동 | 로그 |
-| 인용 그래프 (`citation-analysis` Step 11) | 자동 | — |
-| **신규 hub** | **조건부** — (a) 논문 *자신의* 주제가 기존 hub·alias·related 어디에도 못 붙고, (b) vault에서 그 주제로 묶일 논문이 본 논문 포함 **≥3편**(`wiki_search`로 확인)일 때만. 둘 중 하나라도 아니면 가장 가까운 기존 hub로 매핑하고 `hub_candidate=<slug>`로 로그. refs/cites로는 hub를 만들지 않는다(인용 흐름은 소속 근거 아님) | 로그 → 아침 검토 |
-| 깨진 링크 정정 (Step 5) | 자동 — `[[old]]` 토큰 치환만 | 로그 |
-| 통찰 노트 (`notes/`) | **안 씀** — 분석 중 판단이 나오면 `insight_candidate=` 한 줄만 로그 | 사람 (`insight-capture`) |
-| `wiki-lint` 반영 · "안 읽기로 함" 결정 · hub 재설계 · hub 요약 갱신 | **안 함** | 사람 |
+동적 모드일 때만: 정지 조건이 아니면 `delaySeconds=60`으로 같은 프롬프트를 재예약하고, 정지 조건(scope 미입력 포함)이면 `stop`으로 루프를 끝낸다.
 
-vault 본문에는 내부 메타 식별자를 쓰지 않는다. autopilot의 흔적은 `_meta/`에만 남는다.
+## 실행 구조 — 디스패처/워커 (컨텍스트 격리)
+한 반복은 논문 본문·refs 메타·hub 본문으로 컨텍스트를 13만~19만 토큰까지 불린다(실측 n=10). 본 세션은 **디스패처만** 하고 Step 0~7은 **워커**(서브에이전트)가 새 컨텍스트에서 수행한다. 본 세션에는 보고 15줄만 남는다.
+
+```
+D0 가벼운 게이트 — 스폰 없이 끝낼 수 있는 tick을 먼저 거른다 (읽기 + 작은 쓰기만)
+   · wiki_read_note("_meta/autopilot") + Bash: grep "^## \[" <vault>/_meta/autopilot-log.md | tail -3   ← 로그 전체를 읽지 않는다. <vault> = OBSIDIAN_VAULT_PATH(기본 ~/Documents/research-wiki)
+   · 마지막 헤더가 결과 줄 없는 start → 끊긴 반복. 제어 노트 consecutive_failures += 1 (워커가 이어받아 닫으면 0). 3이면 정지 처리 · 종료
+   · stop: true → 먼저 CronList. 남은 job 중 id가 deleted_jobs에 있으면 옛 cron — 다시 CronDelete하고 "정지 상태 — 옛 cron 정리" 한 줄 · 종료(스폰·로그 없음)
+                  그런 id가 없고 인자에 scope가 있으면 진짜 새 /loop — stop: false, deleted_jobs 비우고 계속. scope도 없으면 "정지 상태 — 새로 /loop scope=…" 한 줄 · 종료
+                  (cron은 세션 안에만 살므로 이 대조는 같은 세션에서 ③이 실패했을 때만 뜻이 있다. 새 세션이면 deleted_jobs 잔재는 그냥 비운다)
+   · 인자에도 노트에도 scope 없음 → 아래 "scope 요청 출력" · 첫 회만 scope_missing 로그(append) · 종료 (제어 노트 그대로, cron 유지 — 답을 기다린다)
+   · max_papers 도달 → 정지 처리 · 종료
+   · "설정만 하는 발화" / "autopilot 멈춰" → 제어 노트·로그를 직접 갱신 · 종료 (워커 불필요)
+   · "autopilot 보고" → 실행 보고서만 만들어 출력 · 종료 (정지 아님, 저장 없음)
+D1 워커 스폰 — Agent(subagent_type="general-purpose", run_in_background=false, prompt=아래 워커 프롬프트)
+   · 반드시 동기(blocking). 워커가 끝나기 전에 tick이 끝나면 다음 tick이 두 번째 워커를 띄워 두 반복이 같은 vault를 건드린다
+D2 워커의 마지막 메시지(보고)를 사용자에게 그대로 릴레이
+   · 보고에 ask=가 있으면(scope 미해석) 아래 "scope 요청 출력"으로 감싼다
+   · stop_reason이 '-'가 아니면 루프 종료(정지 처리 ③) → ④ 실행 보고서
+   · 아니면 동적 모드일 때만 재예약(60초)
+```
+
+**워커 프롬프트** (디스패처가 채워 보낸다):
+```
+research-autopilot 스킬의 한 반복을 워커 모드로 수행하라.
+- 지침: 프로젝트의 `.claude/skills/research-autopilot/WORKER.md`(플러그인으로 설치됐으면 그 스킬 폴더의 WORKER.md)를 Read로 읽고 그대로 따른다. (Skill 도구로 research-autopilot을 부르지 않는다 — 그것은 디스패처 본문이다)
+- 인자: scope={인자 원문 | "(없음 — 제어 노트 값 사용)"} max_papers={값 | "(없음)"}
+- 상태: iter={N} · 직전 헤더="{D0가 읽은 마지막 헤더 1줄}" · processed={p}/{max_papers} · consecutive_failures={c}   ← D0가 읽은 값 그대로. 워커는 로그를 다시 읽지 않는다
+- 환경: vault={vault 루트 절대경로} · MCP 도구 접두사={예: mcp__research__} · 오늘={YYYY-MM-DD} · SS 캐시 1주
+- 워커 계약: Step 0~7 전부. figure/table 추출 금지. 사용자 질문 금지(필요하면 scope_missing 로그 + ask=). 루프 제어 금지(정지 처리 ①②를 했으면 stop_reason). 로그는 헤더 tail -3만 읽고 >>로 append. read_paper는 max_pages=15.
+- 마지막 메시지는 WORKER.md "Output format" 블록 + 다음 한 줄. 15줄 이내:
+  summary iter= action= id= slug= status= hubs= new_hub= hub_candidate= links_fixed= held= processed= queue= frontier= interrupted= stop_reason= ask=
+```
+
+**인라인 모드 (fallback)**: Agent 도구가 없는 환경(플러그인을 Claude Desktop에서 쓸 때, web 에이전트)에서는 같은 세션이 `WORKER.md`를 읽고 Step 0~7을 직접 수행한다. 동작은 같고 컨텍스트 격리만 없다.
+
+## scope 입력 — 디스패처가 아는 만큼
+scope는 **hub slug의 집합**(`wiki_list_hubs()`에 있는 것만, 자식 hub 자동 포함)이며 **실행(run) 단위**다 — 모든 정지에서 비워지고 다음 `/loop`에서 다시 받는다. 정지 기록 없이 끊긴 실행(한도·세션 사망)은 같은 실행이라 남아 있다.
+- slug와 자연어는 같은 경로다 — `wiki_list_hubs()`의 slug·alias·title·summary에 **뜻으로** 대응시킨다. 한 부모 hub 아래로 묶이면 부모로(자식 포함), 서로 다른 갈래에 걸치거나 어느 hub에도 닿지 않으면 후보와 함께 묻는다.
+- **전체는 `all`("전체")로만.** 빈 값은 "미입력"이지 "전체"가 아니다.
+- **첫 해석을 고정한다** — 제어 노트에 원문 `scope_input`과 결과 `scope`를 함께 저장하고, 같은 인자가 다시 오면 재해석하지 않는다(`/loop`은 tick마다 같은 문자열을 넘긴다). 새로 해석했을 때만 `scope 확정: graph-rag, finance-agents (+temporal-leakage) ← "…"`로 되돌려 보여준다.
+- **설정만 하는 발화**("오늘은 graph rag랑 금융 에이전트로" — 시작 지시 없음)는 D0가 제어 노트에 기록하고(`stop: false`) 확인 문장만 낸다. 반복은 시작하지 않는다. 그 뒤 인자 없는 `/loop 10m /research-autopilot`이 제어 노트의 scope로 돈다.
+- 필터가 걸리는 지점(S1·S2·PA·초록 게이트·리필·신규 hub)은 `WORKER.md` "주제 scope".
+
+**scope 요청 출력** (scope가 없거나 해석 불가일 때 — 디스패처가 낸다):
+```
+🛑 autopilot — scope가 없어 시작하지 않았습니다
+   이번 실행에서 다룰 hub를 골라 주세요 (쉼표로 여러 개, 자식 hub는 자동 포함, 자연어로 말해도 됩니다):
+   - finance-agents — {summary} (자식: temporal-leakage)
+   - graph-rag — {summary}
+   … (wiki_list_hubs 전체, 부모 hub는 자식과 함께 표시){ · 해석 불가였으면: 입력 "{원문}" — 후보: {ask의 후보}}
+   모든 hub를 대상으로 하려면 "전체"라고 명시해 주세요. 보통은 관련 hub 몇 개가 맞습니다.
+   → 답하시면 그 값으로 이어서 진행합니다. 프롬프트에 고정하려면: /loop 10m /research-autopilot scope=graph-rag,finance-agents
+```
+
+## 정지 처리 (모든 사유 공통)
+디스패처(D0)·워커(Step 1.5·7) 어느 쪽이 시작하든 같은 절차. ①②는 시작한 쪽이, ③④는 **디스패처**가 한다.
+1. 로그 append: `## [ts] autopilot | iter=N | action=stop | reason=…` + `processed=… run_started=… scope=… scope_input="…"` — 최종 카운터는 여기 남는다.
+2. 제어 노트 `stop: true`, `scope: []`, `scope_input: ''`, `run_started: ''`, `processed: 0`, `consecutive_failures: 0`(`max_papers`·`min_velocity`·`frontier_anchors`·본문 절은 유지). `run_started`를 남기면 다음 실행 보고서가 두 실행을 합산한다. **카운터는 정지 기록을 경계로 리셋된다** — 시간 기준 리셋은 없다.
+3. 루프 종료: 고정 간격이면 `CronList`에서 `/research-autopilot` 프롬프트의 job을 모두 `CronDelete` → 다시 `CronList`로 확인, 남았으면 한 번 더 → 지운 id를 제어 노트 `deleted_jobs`에 기록. 동적이면 `stop`.
+4. 실행 보고서(아래 절).
+
+`reason` ∈ `user | max_papers | consecutive_failures | queue_exhausted | control_parse_error`. `scope_missing`은 정지가 아니라 **대기**다 — 로그 한 줄(첫 회)만 남기고 ②③④를 하지 않는다. 채팅 "autopilot 멈춰"도 ①~④. **이미 정지 기록이 있는 상태의 "멈춰"는 로그 없이 ③만.**
 
 ## 상태 파일 (`_meta/` — 시스템 영역)
+- **`_meta/autopilot.md` 제어** — 사용자가 편집하는 파일. frontmatter `stop`·`max_papers`·`min_velocity`·`scope`·`scope_input`·`run_started`·`processed`·`consecutive_failures`·`frontier_anchors`·`deleted_jobs`, 본문 `## 우선 큐`·`## 건너뜀`·`## 보류`·`## frontier`. 템플릿과 키 설명은 `WORKER.md` "상태 파일"(없으면 워커가 생성).
+- **`_meta/autopilot-log.md` 이력** — append-only. 한 반복 = `start` 헤더 1줄 + 결과 헤더 1줄 + `key=value` 3줄. 헤더 문법 `## [YYYY-MM-DD HH:MM] autopilot | iter=N | action=start|ingest|skip|refill|stop | …`. **D0는 헤더 3줄(`grep "^## \[" … | tail -3`)만 읽고, 전체는 실행 보고서 때 1회만 읽는다.** 마지막 헤더가 `action=start`면 그 반복은 끊긴 것이다.
 
-**`_meta/autopilot.md` — 제어.** 사용자가 편집하는 파일이다. 첫 실행 시 아래 템플릿으로 생성.
-
-```markdown
----
-stop: false                # true로 바꾸면 다음 반복에서 멈춘다
-max_papers: 0              # 이번 실행 최대 처리 편수. 0 = 무제한
-run_started: 2026-09-04T23:00
-processed: 0               # 이번 실행 누계 (ok + partial)
-consecutive_failures: 0
-frontier_anchors: []       # 리필에 이미 쓴 anchor slug — 순환용
----
-# Autopilot 제어
-
-## 우선 큐
-사용자가 지정한 항목. 한 줄 = 한 항목. 대기열보다 먼저 처리되고, 처리되면 줄이 지워진다.
-- 2506.01234 — 이유 (선택)
-- Generative Agents: Interactive Simulacra — 제목만 있어도 됨
-
-## 건너뜀
-autopilot이 풀지 못한 항목. 줄을 지우면 다음 반복에서 다시 시도한다.
-- <이름> — <사유> (<날짜>)
-
-## frontier
-대기열이 비었을 때 리필된 후보. velocity 순. 처리되면 줄이 지워진다.
-- <arxiv_id> — <title> · vel <v> · via <anchor slug>
-```
-
-**`_meta/autopilot-log.md` — 이력.** append-only. 한 반복 = 헤더 한 줄 + `key=value` 줄. `grep "^## \[" _meta/autopilot-log.md | tail`로 밤새 이력을 본다.
-
-```markdown
-## [2026-09-04 23:12] autopilot | iter=7 | action=ingest | id=2604.01234 | slug=generative-agents | status=ok
-source=S2 rank=P2 hub_of_origin=agent-memory pages=14 figures=5/12 refs=20 cites=18
-hubs=agent-memory new_hub=- hub_candidate=- links_fixed=2 insight_candidate=-
-
-## [2026-09-04 23:41] autopilot | iter=8 | action=ingest | id=2603.05678 | slug=- | status=fail
-step=4b error="SS 429 백오프 후에도 실패" consecutive_failures=1
-
-## [2026-09-05 06:02] autopilot | iter=21 | action=stop | reason=queue_exhausted
-processed=13 run_started=2026-09-04T23:00
-```
-
-`action` ∈ `ingest | skip | refill | stop`. `status` ∈ `ok | partial | fail`. `reason` ∈ `user | max_papers | consecutive_failures | queue_exhausted | control_parse_error`.
-
-## Steps (tool sequence)
-
-| # | 동작 | 도구 |
-|---|---|---|
-| 0 | **제어 읽기.** 제어 노트가 없으면 템플릿으로 생성. `stop: true` → `action=stop reason=user` 로그 후 종료. `max_papers > 0`이고 `processed >= max_papers` → `reason=max_papers`. 마지막 로그 헤더가 6시간 이전이면 새 실행으로 보고 `run_started`·`processed`·`consecutive_failures` 초기화 | `wiki_read_note("_meta/autopilot")`, `wiki_read_note("_meta/autopilot-log")` |
-| 1 | **대기열 유도** — 아래 순서로, 앞 소스에서 후보가 나오면 뒤 소스는 읽지 않는다. 전부 `## 건너뜀`과 대조. (P0) 제어 노트 `## 우선 큐` → (S1) 깨진 wikilink: 출처가 `_meta/`인 것 제외, `reading-queue`의 P1~P4 등급 + 참조 노트 수로 정렬 → (S2) hub 본문의 평문 미수록 논문 이름: `reading-queue` S2 판정 그대로(vault 기수록 여부는 **뜻으로 대조**, 개념어 제외) → (F) 제어 노트 `## frontier` 위에서부터 | `wiki_backlinks()`, `wiki_list_hubs()`, `wiki_read_note(hub)` |
-| 1.5 | 전부 비었으면 **리필**(아래 절) 후 (F)로 진행. 리필도 0건이면 `stop: true` + `reason=queue_exhausted` 로그 후 종료 | (리필 절) |
-| 2 | **후보 → arXiv ID.** 이미 ID면 통과. 이름이면 ① 참조 노트의 그 줄에서 `(arXiv:ID)` 병기를 먼저 찾고 ② 없으면 `search_papers(제목, max_results=5)` 상위에서 제목이 **뜻으로 일치**하는 것만 채택. 둘 다 실패 → `## 건너뜀`에 사유 기록, 다음 후보로. 한 반복에서 후보 3개가 연속 건너뛰어지면 `action=skip`으로 반복 종료(루프는 계속) | `search_papers` |
-| 3 | **중복 검사.** vault에 이미 있으면 ingest하지 않는다 — Step 5 링크 정정만 하고 다음 후보로 | `wiki_read_note(arxiv_id)` |
-| 4a | **ingest** — `paper-ingest` Step 1~8 그대로(대용량 게이트·figure 선별 포함). Step 6의 신규 hub 판정은 "자동 승인 규칙" 표로. 우선 큐 항목에 `citation_pending`이 붙어 있으면 4a는 건너뛰고 4b만 | (`paper-ingest`) |
-| 4b | **인용 분석** — `citation-analysis` Step 1~11, `direction=both`, `top_k=20`. Step 8 게이트는 자동 승인. refs/cites 쪽 신규 hub 후보는 만들지 않고 closest 기존 hub로 | (`citation-analysis`) |
-| 4c | **신규 hub 생성 시** (표의 조건 충족) — 기존 hub와 같은 frontmatter(`tier: hub`, `title`, `slug`, `aliases`, `parent`, `related`, `summary`, `seed_paper`, `created_at`). `parent`는 가장 가까운 기존 hub로 **필수**. 본문은 소속 논문을 `[[slug\|표기]]`로 링크(평문 금지). 부모 hub 본문 `## 하위 갈래` 절에 `- [[slug]] — 한 줄` 추가(절이 없으면 끝에 신설) | `wiki_write_note("topics/<slug>")`, `wiki_read_note`/`wiki_write_note(parent)` |
-| 5 | **링크 정정** — 이 후보를 가리키던 깨진 링크 `[[old]]` / `[[old\|표기]]`를 `[[<new-slug>\|<표기 또는 old>]]`로 치환. 참조 노트마다 read → 토큰 치환 → write(frontmatter는 읽은 그대로 되돌려 보존). `_meta/` 노트는 건드리지 않는다. S2에서 온 후보면 hub 본문의 평문 이름을 `[[slug\|표기]]`로(L8과 같은 규칙) | `wiki_read_note`, `wiki_write_note` |
-| 6 | **상태 갱신** — 우선 큐·frontier에서 해당 줄 제거, `processed += 1`(ok/partial), `consecutive_failures`는 ok면 0·fail이면 +1. 로그 append | `wiki_write_note("_meta/autopilot")`, `wiki_write_note("_meta/autopilot-log")` |
-| 7 | **종료.** 다음 반복은 루프가 연다. `consecutive_failures >= 3`이면 `stop: true` + `reason=consecutive_failures` + 진단 한 줄을 로그에 남기고 루프를 끝낸다 | — |
-
-Step 5가 없으면 ingest한 논문을 가리키던 링크가 계속 깨진 채 남아 **같은 논문이 다음 반복에 다시 뽑힌다.** Step 3의 중복 검사가 2차 방어지만, 정정을 해야 대기열이 실제로 줄어든다.
-
-## 리필 — 대기열이 비었을 때 frontier 채우기
-대기열이 비었다는 것은 vault가 자기 참조를 다 채웠다는 뜻이다. 다음 "중요한 논문"은 새 검색어가 아니라 **vault가 이미 중심으로 삼은 논문의 인용 이웃**에서 뽑는다 — 사용자 관심(vault 구조) × 외부 중요도(citation velocity).
-
-1. **anchor 선정** — Step 1의 `wiki_backlinks()` 📇 블록에서 inbound 수가 가장 많은 `papers/` 노트 3편. `frontier_anchors`에 이미 있는 것은 건너뛰어 순환한다(전부 썼으면 목록을 비우고 처음부터).
-2. anchor마다 frontmatter에서 `arxiv_id`를 읽고 `get_citations_by_citations(id, top_k=10)` + `get_references_by_citations(id, top_k=10)`.
-3. **필터** — arXiv ID가 있는 것만 → vault 기수록 제외(`wiki_read_note(arxiv_id)`가 노트를 돌려주면 제외) → `## 건너뜀` 제외. survey는 도구가 이미 제외한다.
-4. velocity 내림차순 **상위 10건**을 `## frontier`에 기록, anchor 3편을 `frontier_anchors`에 추가. `action=refill anchors=a,b,c added=N` 로그.
-5. 0건이면 다음 anchor 3편으로 한 번 더. 그래도 0건이면 `reason=queue_exhausted`로 정지.
-
-frontier는 SS에서 유래해 vault로부터 유도할 수 없으므로 저장한다. 오래된 항목이 남아도 Step 3의 중복 검사가 무해화한다 — 이미 들어온 논문은 ingest되지 않고 줄만 지워진다.
-
-## Output format (사용자 응답 — 반복마다 짧게)
+## 실행 보고서 — 정지 시 (또는 "autopilot 보고" 요청 시)
+정지 처리 ④에서 **디스패처**가 만든다. 재료는 로그뿐이다 — `_meta/autopilot-log.md`를 이때 한 번 전체로 읽어 `run_started` 이후 항목의 `title`·`tldr`·`hubs`·`source`·`rank`·`gate`·`velocity`·`insight_candidate`·`hub_candidate`·`new_hub`·`held`·`interrupted`를 모은다. **노트를 다시 읽거나 새로 조회하지 않는다** — 보고서 비용을 실행 길이와 무관하게 로그 한 번 읽기로 고정하기 위해서다. 채팅에 출력하고 같은 내용을 `research-autopilot/<정지 날짜>.md`에 저장한다(같은 날 두 번째면 `-2`). 파일 안에서 논문은 `papers/<slug>` 평문 경로로 적는다 — `[[wikilink]]`를 쓰면 보고서 한 장이 논문 여러 편에 inbound를 만들어 hub 소속과 구분되지 않는다. `research-autopilot/`는 `_meta/` 밖이므로 **vault 본문 격리 규칙이 적용된다**(내부 메타 식별자 금지). wiki-lint 고아 검사에서는 제외 폴더다.
 
 ```
-🤖 autopilot iter {N} — {ingest|skip|refill|stop}
-   {title} (arXiv:{id}) · {rank}/{source} · hubs: {hub, …} · new hub: {-|slug}
-   링크 정정 {k}건 · 이번 실행 누계 {processed}편 · 대기열 잔여 ≈{q} (frontier {f})
-   → 다음 반복 예약 (60s)   |   ⏹ 정지: {reason}
+📋 autopilot 실행 보고 — {run_started} → {정지 시각} · scope: {…} · 정지: {reason}
+   처리 {N}편 (ok {a} · partial {b}) · source: S1 {…} · S2 {…} · PA {…} · F {…} · 건너뜀 {s}건(scope 밖 {x}) · 보류 {h}건 · 끊김 {i}회 · 새 hub: {…|-} · hub 후보: {…|-}
+   {PA만 처리했으면: ⚠️ 신규 유입 없음 — scope 안 S1/S2가 고갈돼 백필(인용 지도)만 돌았다. scope를 넓히거나 우선 큐를 채울 때}
+
+## 들어온 논문
+1. {title} (arXiv:{id}) — papers/{slug} · {rank}/{source} · {gate} · hubs: {…} · vel {v}
+   {tldr}
+2. …
+
+## 통찰 후보 — 저장되지 않았다. 고르면 insight-capture 초안 모드로
+- {slug}: {insight_candidate}
+- …
+
+## 이번 배치가 말하는 것
+{2~3문장. 위 TL;DR과 후보만으로 쓴 종합 — 어떤 흐름이 채워졌고 무엇이 비어 있는지. 새 조사·추측 금지. 근거가 없으면 "종합할 만한 공통점 없음" 한 줄}
+
+## 아침 할 일
+- figure/table on-demand 후보: {figure가 있을 법한 논문 slug, …} — paper-ingest override 경로
+- hub 후보 검토: {hub_candidate 목록} · 새 hub 확인: {new_hub}
+- 보류 {h}건 훑기 · scope 밖 {x}건 · wiki-lint(L4 stale 후보: 소속이 늘어난 hub {…})
 ```
 
-정지 시에는 실행 요약을 덧붙인다: 처리 편수, 새 hub, `hub_candidate`·`insight_candidate` 목록, 건너뜀 건수, 실패 진단.
+"이번 배치가 말하는 것"은 판단이지만 vault에 쓰지 않는 채팅 산출물이다 — 통찰 노트는 여전히 사용자가 `insight-capture`로 고른 것만 저장된다. "autopilot 보고" 요청은 정지 없이 같은 형식으로 현재 실행(마지막 `stop` 이후) 기준으로 만들고, 파일은 저장하지 않는다.
 
-## Failure handling
-- **한 반복 안의 실패는 그 논문만 건너뛴다.** 다른 도구로 우회하지 않는다(web search 등 금지). 사유를 `## 건너뜀`과 로그에 남기고 다음 후보로.
-- Step 2 `search_papers` 무결과·제목 불일치 → 건너뜀 (`reason="arXiv 미해석"`). 제목이 비슷해도 저자·연도가 다르면 채택하지 않는다 — 잘못 넣은 논문은 아침에 지우기가 더 비싸다.
-- Step 4a `get_paper_by_id` 실패·PDF 다운로드 실패 → `paper-ingest` Failure handling 그대로. 그 논문 `status=fail`.
-- Step 4b SS 429 → `citation-analysis`의 백오프·title-only fallback 그대로. 그래도 실패면 **ingest된 노트는 남기고** `status=partial`, 제어 노트 `## 우선 큐`에 `- <id> — citation_pending` 추가 → 다음 반복이 4b만 재시도.
-- 같은 종류의 `fail`이 3회 연속 → `stop: true` + 진단 한 줄(예: `SS 429 지속`, `arXiv PDF timeout`). 도구 한계는 아침에 사용자가 판단한다 — 루프가 밤새 헛돌지 않게 한다.
-- 제어 노트 frontmatter 파싱 실패(사용자 편집 오류) → 덮어쓰지 않고 `reason=control_parse_error`로 정지.
-- Step 5 참조 노트에 토큰 치환 이상의 수정이 필요해 보이면 하지 않고 `link_fix_skipped=<slug>` 로그 — `wiki-lint` 몫.
-- `wiki_write_note` 실패(권한·경로) → 즉시 정지. 부분 반영 상태를 로그에 명시.
+아침 검토: 보고서 파일 → `grep "^## \[" _meta/autopilot-log.md`(`start` 수 ≠ 결과 수면 열린 반복). 헤더의 `velocity_est=`는 대기열 시점 추정값이고, 검증값 `velocity=`·판정 `gate=`·`interrupted=`·`new_hub=`·`hub_candidate=`·`insight_candidate=`는 결과 줄에 있다 — `grep -o 'gate=[a-z]*' … | sort | uniq -c`로 게이트 분포. 그림은 `paper-ingest` override로 on-demand, `## 보류`·`## 건너뜀`은 줄을 지우면 되살아남, hub 요약은 `wiki-lint`, 통찰은 `insight-capture`, 남은 대기열은 `reading-queue`.
 
-## 후속 호출 제안 (아침 검토)
-- `grep "^## \[" _meta/autopilot-log.md`로 밤새 이력. `new_hub=`·`hub_candidate=`·`insight_candidate=`가 `-`가 아닌 줄만 골라 본다.
-- `wiki-lint` — autopilot은 hub 요약을 갱신하지 않으므로 소속이 늘어난 hub는 L4 stale이 된다. L2 orphan도 함께.
-- `reading-queue` — 남은 대기열과 `## 건너뜀` 정리. 안 읽을 것은 `_meta/reading-queue.md`로.
-- `insight-capture` — 로그의 `insight_candidate` 중 고를 것이 있으면 초안 모드로.
+## Failure handling (디스패처)
+- **끊긴 반복**(워커가 보고 없이 끝남·한도 거부·세션 종료) — 로그엔 `start`만 남는다. 다음 tick의 D0가 `consecutive_failures += 1`(3이면 정지 처리 — 같은 항목에서 계속 죽는다는 뜻), 워커는 그 id·iter를 이어받아 닫는다(`WORKER.md` Step 0·3). 같은 tick에서 워커를 다시 띄우지 않는다. 고정 간격이면 한도 창이 풀린 뒤 자동 재개, 동적이면 사용자가 다시 `/loop`.
+- **scope 미입력** — 실패가 아니라 대기. 고정 간격이면 tick마다 한 줄로 재요청(cron 유지), 동적이면 루프 정지. 사용자가 답하면 검증 후 진행.
+- **cron 삭제 실패** — 옛 cron의 다음 tick을 D0가 `deleted_jobs`의 id로 알아보고 다시 지운다. 두 번 지워도 남으면 매 tick 한 줄만 내고 `/tasks`에서 수동 삭제를 안내한다.
+- **컨텍스트 압축** — 반복 *사이*의 압축은 무해하다. 이 스킬은 이전 turn을 기억에 의존하지 않고 모든 상태를 vault·`_meta`에서 다시 읽는다. 워커 안의 압축은 `WORKER.md` Failure handling.
+- **Agent 도구 없음** → 인라인 모드. 보고 형식·로그는 같다.
