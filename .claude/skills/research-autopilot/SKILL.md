@@ -23,7 +23,9 @@ inputs:
        /loop 10m /research-autopilot graph rag랑 금융 트레이딩 에이전트              자연어도 된다 — 첫 tick이 hub로 해석해 확정 slug를 보여주고 고정
        /loop 10m /research-autopilot                                              scope 없음 → 첫 tick이 hub 목록을 보이며 묻는다. 답할 때까지 돌지 않는다
        /loop /research-autopilot scope=…                                          지켜보며 돌릴 때만 — 동적 self-pacing
-플러그인 다른 프로젝트에선 스킬 이름이 /research-mcp:research-autopilot (하위 스킬도 research-mcp: 접두사, 도구는 mcp__plugin_research-mcp_research__*). 동작·vault는 같다
+플러그인 다른 프로젝트에선 스킬 이름이 /research-mcp:research-autopilot (하위 스킬도 research-mcp: 접두사). 동작·vault는 같다
+서버 선택 도구 서버가 둘 보일 수 있다 — mcp__research__(user 등록)와 mcp__plugin_research-mcp_research__(플러그인). 이 repo에선 앞쪽, 플러그인만 있으면 뒤쪽.
+       둘 다 보이고 확신이 없으면 각각 wiki_list_hubs()를 불러 hub가 보이는 쪽(실제 vault) 접두사를 워커 프롬프트 환경 줄에 박는다
 
 정지   채팅으로 "autopilot 멈춰"          → 정지 처리 + 루프 종료(cron 삭제)
        _meta/autopilot.md 의 stop: true  → 다음 tick에서 정지 처리 + 루프 종료 (Obsidian에서 편집. 다른 세션에서 멈출 때도 이 길)
@@ -50,13 +52,13 @@ inputs:
 ```
 D0 가벼운 게이트 — 스폰 없이 끝낼 수 있는 tick을 먼저 거른다 (읽기 + 작은 쓰기만)
    · wiki_read_note("_meta/autopilot") + Bash: grep "^## \[" <vault>/_meta/autopilot-log.md | tail -3   ← 로그 전체를 읽지 않는다. <vault> = OBSIDIAN_VAULT_PATH(기본 ~/Documents/research-wiki)
-   · 마지막 헤더가 결과 줄 없는 start → 끊긴 반복. 제어 노트 consecutive_failures += 1 (워커가 이어받아 닫으면 0). 3이면 정지 처리 · 종료
+   · 마지막 헤더가 결과 줄 없는 start → 끊긴 반복. 제어 노트 consecutive_failures += 1 (워커가 이어받아 닫으면 0). 3이면 정지 처리 · 종료 — 정지 처리 ⓪이 그 start를 먼저 닫는다
    · stop: true → 먼저 CronList. 남은 job 중 id가 deleted_jobs에 있으면 옛 cron — 다시 CronDelete하고 "정지 상태 — 옛 cron 정리" 한 줄 · 종료(스폰·로그 없음)
                   그런 id가 없고 인자에 scope가 있으면 진짜 새 /loop — stop: false, deleted_jobs 비우고 계속. scope도 없으면 "정지 상태 — 새로 /loop scope=…" 한 줄 · 종료
                   (cron은 세션 안에만 살므로 이 대조는 같은 세션에서 ③이 실패했을 때만 뜻이 있다. 새 세션이면 deleted_jobs 잔재는 그냥 비운다)
    · 인자에도 노트에도 scope 없음 → 아래 "scope 요청 출력" · 첫 회만 scope_missing 로그(append) · 종료 (제어 노트 그대로, cron 유지 — 답을 기다린다)
    · max_papers 도달 → 정지 처리 · 종료
-   · "설정만 하는 발화" / "autopilot 멈춰" → 제어 노트·로그를 직접 갱신 · 종료 (워커 불필요)
+   · "설정만 하는 발화" → 제어 노트에 기록 · 종료 / "autopilot 멈춰" → 정지 처리 ⓪~④(열린 start가 있으면 먼저 닫는다) · 종료 (둘 다 워커 불필요)
    · "autopilot 보고" → 실행 보고서만 만들어 출력 · 종료 (정지 아님, 저장 없음)
 D1 워커 스폰 — Agent(subagent_type="general-purpose", run_in_background=false, prompt=아래 워커 프롬프트)
    · 반드시 동기(blocking). 워커가 끝나기 전에 tick이 끝나면 다음 tick이 두 번째 워커를 띄워 두 반복이 같은 vault를 건드린다
@@ -73,6 +75,7 @@ research-autopilot 스킬의 한 반복을 워커 모드로 수행하라.
 - 인자: scope={인자 원문 | "(없음 — 제어 노트 값 사용)"} max_papers={값 | "(없음)"}
 - 상태: iter={N} · 직전 헤더="{D0가 읽은 마지막 헤더 1줄}" · processed={p}/{max_papers} · consecutive_failures={c}   ← D0가 읽은 값 그대로. 워커는 로그를 다시 읽지 않는다
 - 환경: vault={vault 루트 절대경로} · MCP 도구 접두사={예: mcp__research__} · 오늘={YYYY-MM-DD} · SS 캐시 1주
+- 도구 로드: MCP 도구가 deferred면 첫 행동으로 ToolSearch 한 번에 전부 로드한다 — `select:` 뒤에 접두사를 붙인 전체 이름을 쉼표로: wiki_read_note, wiki_write_note, wiki_list_hubs, wiki_backlinks, wiki_search, wiki_link, search_papers, get_paper_by_id, read_paper, get_references_by_citations, get_citations_by_citations, get_citation_contexts, build_citation_graph. 하나씩 찾지 않는다(왕복과 캐시 재생성 낭비)
 - 워커 계약: Step 0~7 전부. figure/table 추출 금지. 사용자 질문 금지(필요하면 scope_missing 로그 + ask=). 루프 제어 금지(정지 처리 ①②를 했으면 stop_reason). 로그는 헤더 tail -3만 읽고 >>로 append. read_paper는 max_pages=15.
 - 마지막 메시지는 WORKER.md "Output format" 블록 + 다음 한 줄. 15줄 이내:
   summary iter= action= id= slug= status= hubs= new_hub= hub_candidate= links_fixed= held= processed= queue= frontier= interrupted= stop_reason= ask=
@@ -101,6 +104,8 @@ scope는 **hub slug의 집합**(`wiki_list_hubs()`에 있는 것만, 자식 hub 
 
 ## 정지 처리 (모든 사유 공통)
 디스패처(D0)·워커(Step 1.5·7) 어느 쪽이 시작하든 같은 절차. ①②는 시작한 쪽이, ③④는 **디스패처**가 한다.
+
+**⓪ 먼저 열린 start를 닫는다.** 마지막 헤더가 결과 줄 없는 `start`면(끊긴 워커 뒤의 "멈춰"·연속 실패 3회 정지가 여기 해당) stop 줄보다 먼저 그 반복을 닫는다 — start 헤더의 `id`·`source`·`rank`를 읽고 `wiki_read_note(id)`로 노트 유무를 확인해, 결과 헤더 `action=ingest | id | slug=<slug 또는 -> | status=partial`(노트 있음) 또는 `status=fail`(없음)과 `key=value` 줄(`interrupted=user_stop|consecutive_failures|session`)을 append한다. 우선 큐 줄은 지우지 않고 `processed`도 올리지 않는다 — 다음 실행이 P0·PA로 잡아 4b부터 이어받으며 그때 센다. 이걸 건너뛰면 stop 줄이 열린 start를 영구히 가려 D0의 끊긴 반복 감지도 워커의 이어받기도 발동하지 않는다(2026-09-07 실측: automotive-env). stop 헤더의 `iter`는 그 열린 iter다.
 1. 로그 append: `## [ts] autopilot | iter=N | action=stop | reason=…` + `processed=… run_started=… scope=… scope_input="…"` — 최종 카운터는 여기 남는다.
 2. 제어 노트 `stop: true`, `scope: []`, `scope_input: ''`, `run_started: ''`, `processed: 0`, `consecutive_failures: 0`(`max_papers`·`min_velocity`·`frontier_anchors`·본문 절은 유지). `run_started`를 남기면 다음 실행 보고서가 두 실행을 합산한다. **카운터는 정지 기록을 경계로 리셋된다** — 시간 기준 리셋은 없다.
 3. 루프 종료: 고정 간격이면 `CronList`에서 프롬프트에 `research-autopilot`이 들어간 job(맨 이름·`research-mcp:` 접두사 모두)을 전부 `CronDelete` → 다시 `CronList`로 확인, 남았으면 한 번 더 → 지운 id를 제어 노트 `deleted_jobs`에 기록. 동적이면 `stop`.

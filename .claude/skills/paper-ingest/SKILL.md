@@ -149,7 +149,7 @@ status: read
 ```
 
 ## Failure handling
-- step 1 `get_paper_by_id`가 "❌ 논문을 찾을 수 없습니다" 반환 → SS API 429 가능 → 사용자에게 재시도/시간 두기 안내. 임의 web search로 우회하지 말 것.
+- step 1 `get_paper_by_id`가 "⏳ …"(SS 거절·일시 장애) 반환 → 호출 한도(429)·장애. 없는 논문이 아니므로 잠시 후 재시도(사용자에게 시간 두기 안내). "❌ 논문을 찾을 수 없습니다"만 SS 미매핑이다. 임의 web search로 우회하지 말 것.
 - step 2 PDF 다운로드 실패 → 그대로 중단, 본 스킬 abort.
 - step 4.5 페이지 수 카운트 실패 (PDF 손상 등) → skip으로 넘기지 말고 정상 진행을 시도하되 카운트 실패를 사용자에게 알림. (skip은 "확실히 대용량"일 때만.)
 - step 4a figure 0개 → caption 매칭 실패 가능. 정보만 알리고 4b/4c skip 후 계속.

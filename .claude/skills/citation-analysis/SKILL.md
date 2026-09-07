@@ -122,6 +122,7 @@ citation_velocity: 411.3
 ## Failure handling
 - step 1 SS 4xx/429 → 사용자에게 `SS_API_KEY` env 설정 권유. 임의 web search로 우회하지 말 것.
 - step 2/3 cache miss + 429 → 백오프 후 재시도 (1→2→4초 지수 백오프).
+- **step 1/4에서 "⏳ …"(SS 거절·일시 장애)** — 미매핑이 아니라 호출 한도(429)·장애다. 백오프 후 재시도하고 그래도 안 되면 title-only fallback. "❌"와 구분한다.
 - **step 4 부분 실패 (`get_paper_by_id`가 일부 ref/cite에 "❌ 논문을 찾을 수 없습니다"** — 보통 신생 arxiv ID가 SS DB에 아직 매핑 안 됐거나 BLIP/ALIGN/FLAN 같이 SS sha lookup이 필요한 케이스):
   - **fallback (강제)**: step 2/3의 references/citations endpoint 응답에 이미 들어있는 **title + citation_count + velocity**로 title-only 분류 진행. abstract 없이 title + anchor 도메인 지식으로 topic + cited_for 추론.
   - 실패 비율(예: 9/20)과 paper_id 목록을 사용자 응답 상단에 **반드시 명시**.

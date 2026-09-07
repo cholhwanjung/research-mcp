@@ -7,6 +7,7 @@
 - **사용자에게 묻지 않는다.** 질문이 필요한 지점(scope 미해석·갈래 걸침)은 `action=stop reason=scope_missing` 로그 후 `ask=`에 요지(원문·후보 hub)를 담아 보고한다. 질문문은 디스패처가 만든다.
 - **루프 제어 금지** — ScheduleWakeup·Cron 도구를 건드리지 않는다. 정지 처리 ①②를 했으면 `stop_reason`으로 알린다.
 - **figure/table 추출 금지** — `paper-ingest` 5a~5c는 페이지 수와 무관하게 skip. 텍스트 요약만.
+- **도구 로드** — MCP 도구가 deferred면 워커 프롬프트의 "도구 로드" 줄대로 ToolSearch 한 번에 전부 로드한 뒤 시작한다.
 - **하위 스킬 이름** — `paper-ingest`·`citation-analysis`는 이 repo 안에선 맨 이름, 플러그인으로 설치된 프로젝트에선 `research-mcp:paper-ingest`·`research-mcp:citation-analysis`다(Skill 도구 목록에 있는 쪽을 쓴다). 도구 접두사는 워커 프롬프트 환경 줄의 값.
 - **읽기 다이어트** — 워커 컨텍스트가 곧 반복 비용이다(실측 편당 230~307K 토큰).
   - 로그 읽기: Bash `grep "^## \[" <vault>/_meta/autopilot-log.md | tail -3`로 헤더 3줄만. 전체를 읽지 않는다. 디스패처가 프롬프트 `상태:` 줄로 직전 헤더를 넘겼으면 이것도 생략.
@@ -128,7 +129,7 @@ title="Some Paper Title" tldr="한 줄 요약"
 processed=13 run_started=2026-09-04T23:00 scope=graph-rag,finance-agents scope_input="graph rag랑 금융 트레이딩 에이전트"
 ```
 
-`action` ∈ `start | ingest | skip | refill | stop`. `status` ∈ `ok | partial | fail`. `gate` ∈ `exempt(<rank>) | pass(v=<velocity>) | pass(refs=<n>)`. `figures` ∈ `skipped | extracted | -`, `pages` ∈ `<int> | -` — `-`는 이번 반복이 4a(PDF 읽기)를 건너뛴 경우(PA·`resumed`)뿐이다. 모든 키의 "없음·해당 없음"은 `-` 하나로 적고 빈 값이나 다른 표기를 섞지 않는다. `reason` ∈ `user | max_papers | consecutive_failures | queue_exhausted | scope_missing | control_parse_error`. `interrupted` ∈ `- | worker_rate_limit | worker_timeout | session | unknown` — 이어받아 닫은 반복에만 값이 있다. 결과 줄 셋째 줄의 `title`·`tldr`(노트 TL;DR 한 줄, 200자 이내)과 `insight_candidate`(200자 이내)는 **실행 보고서의 재료**다 — 보고서는 노트를 다시 읽지 않고 이 줄들만으로 만들어진다.
+`action` ∈ `start | ingest | skip | refill | stop`. `status` ∈ `ok | partial | fail`. `gate` ∈ `exempt(<rank>) | pass(v=<velocity>) | pass(refs=<n>)`. `figures` ∈ `skipped | extracted | -`, `pages` ∈ `<int> | -` — `-`는 이번 반복이 4a(PDF 읽기)를 건너뛴 경우(PA·`resumed`)뿐이다. 모든 키의 "없음·해당 없음"은 `-` 하나로 적고 빈 값이나 다른 표기를 섞지 않는다. `reason` ∈ `user | max_papers | consecutive_failures | queue_exhausted | scope_missing | control_parse_error`. `interrupted` ∈ `- | worker_rate_limit | worker_timeout | session | user_stop | consecutive_failures | unknown` — 이어받아 닫았거나 정지 처리 ⓪이 대신 닫은 반복에만 값이 있다. 결과 줄 셋째 줄의 `title`·`tldr`(노트 TL;DR 한 줄, 200자 이내)과 `insight_candidate`(200자 이내)는 **실행 보고서의 재료**다 — 보고서는 노트를 다시 읽지 않고 이 줄들만으로 만들어진다.
 
 **`start`만 있고 같은 `iter`의 결과 줄이 없으면 그 반복은 중간에 끊긴 것**이다(사용량 한도·세션 종료·워커 중단). 끊긴 turn은 아무 표시도 남기지 못하므로 복구는 로그가 아니라 vault 상태로 판정한다 — 다음 워커가 그 id·iter를 이어받는다(Step 0·3).
 
@@ -154,7 +155,7 @@ processed=13 run_started=2026-09-04T23:00 scope=graph-rag,finance-agents scope_i
 
 **쓰기 순서 (고정)**: ① 논문 노트(4a Step 8) → ② 인용 frontmatter(4b Step 9) → ③ 그래프(Step 11) → ④ 논문→hub 링크(Step 10)·신규 hub·부모 hub(4c) → ⑤ 참조 노트 링크 정정(Step 5). **새 slug를 가리키는 링크는 노트 파일이 생긴 뒤에만 쓴다** — 어느 지점에서 끊겨도 깨진 링크가 새로 생기지 않는다(첫 야간 실측에서 hub 링크·그래프가 노트보다 먼저 써진 채 끊겨 재개 전까지 깨진 링크가 남았다).
 
-**정지 처리 — 워커가 하는 ①②**: ① `## [ts] autopilot | iter=N | action=stop | reason=…` 헤더 + `processed=… run_started=… scope=… scope_input="…"` 줄 append(최종 카운터는 여기 남는다) ② 제어 노트 `stop: true`, `scope: []`, `scope_input: ''`, `run_started: ''`, `processed: 0`, `consecutive_failures: 0`(`max_papers`·`min_velocity`·`frontier_anchors`·`deleted_jobs`·본문 절은 유지). `run_started`를 남기면 다음 실행 보고서가 두 실행을 합산한다. 그리고 보고의 `stop_reason`에 사유. ③ 루프 종료(cron 삭제·`deleted_jobs` 기록) ④ 실행 보고서는 **디스패처**가 한다 — 워커는 하지 않는다. `scope_missing`은 정지가 아니라 대기라 ②를 하지 않는다.
+**정지 처리 — 워커가 하는 ①②**: ① `## [ts] autopilot | iter=N | action=stop | reason=…` 헤더 + `processed=… run_started=… scope=… scope_input="…"` 줄 append(최종 카운터는 여기 남는다) ② 제어 노트 `stop: true`, `scope: []`, `scope_input: ''`, `run_started: ''`, `processed: 0`, `consecutive_failures: 0`(`max_papers`·`min_velocity`·`frontier_anchors`·`deleted_jobs`·본문 절은 유지). `run_started`를 남기면 다음 실행 보고서가 두 실행을 합산한다. 그리고 보고의 `stop_reason`에 사유. ⓪(열린 start 닫기)·③ 루프 종료(cron 삭제·`deleted_jobs` 기록)·④ 실행 보고서는 **디스패처**가 한다 — 워커는 자기 반복을 닫은 뒤에만 ①②를 하므로 열린 start를 남기고 정지하는 일이 없다. `scope_missing`은 정지가 아니라 대기라 ②를 하지 않는다.
 
 Step 5가 없으면 ingest한 논문을 가리키던 링크가 계속 깨진 채 남아 **같은 논문이 다음 반복에 다시 뽑힌다.** Step 3의 중복 검사가 2차 방어지만, 정정을 해야 대기열이 실제로 줄어든다.
 
@@ -190,6 +191,7 @@ summary iter= action= id= slug= status= hubs= new_hub= hub_candidate= links_fixe
 - Step 2 `search_papers` 무결과·제목 불일치 → 건너뜀 (`arXiv 미해석`). 제목이 비슷해도 저자·연도가 다르면 채택하지 않는다 — 잘못 넣은 논문은 아침에 지우기가 더 비싸다.
 - Step 3.5 scope 밖 → 건너뜀 (`scope 밖 (<scope>)`). 정상 동작이지 실패가 아니다 — `consecutive_failures`에 세지 않는다.
 - Step 3.6 중요도 미달 → `## 보류`(재평가 +30일). 실패가 아니다 — `consecutive_failures`에 세지 않는다. 메타 조회 실패로 판정 불가 → 보류(재평가 +7일).
+- `get_paper_by_id`·refs/cites 조회가 **`⏳`(SS 거절·일시 장애)** 를 돌려주면 없는 논문이 아니다 — `## 건너뜀`·`## 보류`에 넣지 않는다. 그 반복은 `status=fail`(진단 `SS 429`)로 닫고 우선 큐 항목은 남겨 다음 반복이 재시도한다. `❌ 찾을 수 없습니다`만 SS 미매핑(건너뜀·보류 대상)이다. `⏳`가 3회 연속이면 `consecutive_failures` 정지가 밤새 헛도는 것을 막는다.
 - Step 4a `get_paper_by_id` 실패·PDF 다운로드 실패 → `paper-ingest` Failure handling 그대로. 그 논문 `status=fail`. `read_paper(max_pages=15)` 출력이 그래도 파일로 떨어지면 Read 한 번으로 읽는다.
 - Step 4b SS 429 → `citation-analysis`의 백오프·title-only fallback 그대로. 그래도 실패면 **ingest된 노트는 남기고** `status=partial`, 제어 노트 `## 우선 큐`에 `- <id> — citation_pending` 추가 → 다음 반복이 4b만 재시도. (표시가 없어도 PA·재개 규칙이 같은 논문을 다시 잡는다 — 표시는 우선순위를 앞당길 뿐이다.)
 - 같은 종류의 `fail`이 3회 연속 → `reason=consecutive_failures` 정지 처리 ①② + 진단 한 줄(예: `SS 429 지속`, `arXiv PDF timeout`). 도구 한계는 아침에 사용자가 판단한다 — 루프가 밤새 헛돌지 않게 한다.
