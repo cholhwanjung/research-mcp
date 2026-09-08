@@ -1,72 +1,50 @@
 ---
 name: tech-blog-digest
-description: Anthropic/OpenAI/Google DeepMind/Google Research 테크 블로그의 미요약 신규 포스트를 소스별 최대 10개씩 가져와 본문(불가 소스는 RSS) 기반 몇 문단 한국어 요약으로 vault `tech-blog-digest/{date}.md`에 누적한다. seen 상태를 추적해 실행 시점까지 쌓인 새 포스트만 처리.
+description: Anthropic/OpenAI/DeepMind/Google Research 블로그의 미요약 신규 포스트(소스별 최대 10)를 한국어로 요약해 vault `tech-blog-digest/{date}.md`에 누적한다. seen 추적으로 새 포스트만 처리.
 trigger:
   - "테크 블로그 요약"
   - "blog digest"
-  - "블로그 다이제스트"
   - "블로그 신착 정리"
 inputs:
-  - limit_per_source (int, 옵션, 기본 10)
+  - 'limit_per_source (선택, 기본 10)'
 ---
 
 ## When to invoke
-사용자가 실행할 때마다 — 지난 실행에서 요약한 포스트는 제외되고, 그 이후 쌓인
-신규만 처리된다. 소스당 신규가 3개면 3개, 14개면 최신순 10개만 요약하고
-나머지는 다음 실행으로 이월 (seen에 안 넣으므로 자동 이월).
+실행할 때마다 — 지난 실행에서 seen 처리된 포스트는 제외. 소스당 신규가 한도를 넘으면 최신순 한도만, 나머지는 다음 실행으로 이월(seen에 안 넣으므로 자동).
 
-## Steps (tool sequence)
+## Steps
 
-| # | Tool | 목적 |
+| # | 도구 | 규칙 |
 |---|---|---|
-| 1 | `get_tech_blog_posts()` | 소스별 미요약 신규 포스트 목록 (최신순, seen 제외) |
-| 2 | 본문 지원 소스의 각 포스트에 `read_blog_post(url)` | 본문 텍스트. OpenAI는 skip — step 1의 RSS 요약 사용 |
-| 3 | (LLM 추론) | 포스트당 **2-3문단 한국어 요약**. OpenAI는 RSS 발췌 기반 1문단 |
-| 4 | `wiki_write_note(f"tech-blog-digest/{date}", frontmatter, body)` | vault 저장. 같은 날 재실행이면 기존 노트 `wiki_read_note` 후 섹션 append |
-| 5 | `mark_blog_posts_seen([이번에 다룬 url 전부])` | 처리 확정 — 다음 실행에서 제외 |
+| 1 | `get_tech_blog_posts()` | 소스별 미요약 신규 (최신순) |
+| 2 | 각 포스트에 `read_blog_post(url)` | 본문. OpenAI는 본문 불가 — step 1의 RSS 발췌 사용 |
+| 3 | 요약 (LLM) | 포스트당 2-3문단 한국어 (무엇을/왜/연구 시사점). OpenAI는 1문단 |
+| 4 | `wiki_write_note("tech-blog-digest/{date}", fm, body)` | 같은 날 재실행이면 `wiki_read_note` 후 섹션 append |
+| 5 | `mark_blog_posts_seen([이번 url 전부])` | **반드시 step 4 성공 후** — 먼저 seen을 남기면 포스트가 유실된다 |
 
-**step 5는 반드시 step 4 성공 후.** 노트 저장 전에 seen을 남기면 포스트가 유실된다.
-
-## Frontmatter
-
+## Frontmatter / Body
 ```yaml
 date: 2026-07-13
 type: blog-digest
 sources: [anthropic, openai, deepmind, google-research]
 post_count: 8
 ```
-
-## Body 구조 (고정 헤더)
-
 ```markdown
 # Tech Blog Digest — {date}
-
-## 오늘의 흐름
-{소스 전체를 관통하는 2-4줄 한국어 요약 — 공통 테마·경쟁 구도}
-
+## 오늘의 흐름          ← 소스 전체를 관통하는 2-4줄 (공통 테마·경쟁 구도)
 ## Anthropic
 ### [{제목}]({url}) — {published}
-{2-3문단 요약: 무엇을/왜/연구 관점 시사점}
-
+{2-3문단}
 ## OpenAI
 ### [{제목}]({url}) — {published}
-{1문단 요약} *(본문 접근 불가 — RSS 발췌 기반)*
+{1문단} *(본문 접근 불가 — RSS 발췌 기반)*
 ```
+요약만 저장(본문 전문 금지 — 저작권·크기). 원문 링크 필수. 신규 0건 소스는 섹션 생략.
 
-- vault에는 **요약만** 저장 — 본문 전문을 노트에 붙여넣지 않는다 (저작권·노트 크기).
-- 각 포스트에 원문 링크 필수.
-- 신규 0건인 소스는 섹션 생략.
-
-## Output format (사용자 응답)
-
-```
-🗞️ Tech Blog Digest 완료: tech-blog-digest/{date}.md
-   요약: anthropic {n}편 · openai {n}편 · deepmind {n}편 · google-research {n}편
-   이월: {소스별 "신규 N건 중 M건"의 N-M 합이 0보다 크면 명시}
-```
+## Output
+노트 경로 · 소스별 요약 편수 · 이월 건수(있을 때).
 
 ## Failure handling
-- 소스 1개 수집 실패 → 나머지 소스로 진행, 노트에 "{source} 수집 실패" 한 줄 명시.
-- `read_blog_post` 실패 (레이아웃 변경 등) → 해당 포스트는 제목+링크만 기록하고 seen에 포함
-  (매 실행 재시도 무한루프 방지). 사용자가 원하면 수동 재시도.
-- 전 소스 신규 0건 → "신규 포스트 없음" 안내, 노트 저장 skip, mark 호출 없음.
+- 소스 1개 수집 실패 → 나머지 진행, 노트에 "{source} 수집 실패" 한 줄.
+- `read_blog_post` 실패 → 제목+링크만 기록하고 seen에 포함(재시도 무한루프 방지). 원하면 수동 재시도.
+- 전 소스 0건 → "신규 없음", 저장·mark 없음.

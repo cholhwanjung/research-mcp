@@ -1,138 +1,75 @@
 ---
 name: wiki-lint
-description: vault 연구 노트를 주기적으로 health-check한다. orphan·깨진 링크·누락 교차참조·stale hub 요약·노트 간 모순을 스캔해 수정 diff를 제안하고, 사용자 승인 후에만 vault에 반영한다. 자동 수정 금지 (항상 승인 게이트).
+description: vault 연구 노트의 정합성을 점검한다 — 깨진 링크·orphan·누락 교차참조·stale hub 요약·모순·누락 hub·gap·링크 안 된 언급·부모 hub 중복 태그. 수정 diff를 제안하고 승인된 것만 반영한다.
 trigger:
   - "위키 점검"
   - "vault 정리"
   - "노트 모순 찾아줘"
   - "wiki-lint"
 inputs:
-  - 'scope (string, 선택) — 점검 범위. "all"(기본, 전체 vault) 또는 hub slug 하나(예: "vlm" → 그 hub에 백링크된 논문 묶음만). 대규모 vault에서 토큰 비용을 사용자가 조절하는 손잡이.'
+  - 'scope (선택) — "all"(기본) 또는 hub slug 하나. 대규모 vault에서 비용을 좁히는 손잡이'
 ---
 
 ## When to invoke
-vault에 논문이 어느 정도 쌓여(대략 10편+) 노트 간 정합성이 흐트러질 수 있을 때, 또는 사용자가 명시적으로 점검을 요청할 때. 개별 논문 1편을 새로 넣는 건 `paper-ingest`가 담당 — 본 스킬은 **이미 쌓인 것들의 화해(reconcile)** 전용이다. 단일 노트만 손보면 되는 경우엔 부르지 말 것.
+논문이 쌓여(대략 10편+) 노트 간 정합성이 흐트러졌을 때, 또는 명시 요청 시. **이미 쌓인 것의 화해(reconcile)** 전용 — 논문 추가는 `paper-ingest`, 단일 노트 수정이면 부르지 않는다.
 
-## 발동 원칙
-- **자동 수정 금지** — 본 스킬은 *스캔 + diff 제안*까지만. vault 실제 쓰기는 사용자 명시 승인 후에만. (PRD 비목표 "완전 자동 큐레이션" 준수 — 분류·요약 결과는 사용자가 최종 판단.)
-- **출처 명시** — 모든 제안은 "어느 노트의 무엇이 왜 문제인가"를 노트 slug로 특정한다. 막연한 "품질 개선" 금지.
-- **surgical** — 요청 범위 밖 노트는 건드리지 않는다. 모호하면 keep(수정 제안하지 않음) 쪽으로.
-- **vault 본문 격리** — 제안·수정으로 vault에 쓰는 어떤 텍스트에도 내부 메타 식별자(결정 기록 번호·SKILL·ARCHITECTURE·PRD·PLAN 등)를 넣지 않는다. vault는 사용자 연구 영역. 로그는 `_meta/`(시스템 영역)에만.
+## 원칙
+- **자동 수정 금지** — 스캔 + diff 제안까지. 쓰기는 사용자 승인 후.
+- 모든 제안은 노트 slug로 특정한다. 범위 밖 노트는 건드리지 않고, 모호하면 제안하지 않는다.
+- vault에 쓰는 어떤 텍스트에도 내부 메타 식별자를 넣지 않는다. 로그는 `_meta/`에만.
 
-## 점검 항목 (scan checks)
-각 항목은 **제안**만 만든다. 구조적 항목(L1·L2)도 승인 게이트를 거친다.
+## 점검 항목
 
-| # | 항목 | 탐지 | 제안 형태 |
+| # | 항목 | 탐지 | 제안 |
 |---|---|---|---|
-| L1 | **깨진 wikilink** | 본문 `[[target]]`이 실재 노트로 해석 안 됨 | 대상 노트 생성 or 링크 수정/삭제 |
-| L2 | **orphan 논문** | 인바운드 백링크 0 + 어느 hub에도 안 걸림 | 적합 hub에 `[[논문]]` 링크 추가 |
-| L3 | **누락 교차참조** | 같은 hub를 공유하는 두 논문이 서로 링크 없음 | 양쪽에 `wiki_link` |
-| L4 | **stale hub 요약** | hub 노트 요약/본문이, 지금 백링크된 논문들을 반영 못 함 | hub 요약 재작성 diff. **교체되는 문단에 판단이 섞여 있으면 통찰 후보로 먼저 건진다** |
-| L5 | **노트 간 모순** | 같은 hub 논문들 사이 상충 주장(벤치마크 수치·supersede 관계 등) | 모순을 명시하는 한 줄 노트 추가. **"모순인가 보완인가"의 판정 자체는 통찰 후보** |
-| L6 | **누락 hub** | 여러 논문(≥3)에 반복 등장하는 주제인데 hub 노트 없음 | 신규 hub 후보 제시(승인 시 생성) |
-| L7 | **data gap** (제안만) | 특정 주장/수치의 근거 논문이 vault에 없음 | 채울 만한 질문·검색어를 *제안*. 자동 web fetch 금지. **"이 축이 비어 있다"는 관찰은 통찰 후보** |
-| L8 | **링크 안 된 언급** | hub 본문이 vault에 있는 논문을 평문 이름으로만 부름 (예: "메모리 기반(FinMem)"인데 `finmem` 노트가 존재) | 표기를 유지한 채 `[[slug\|표기]]`로 교체 |
-| L9 | **부모 hub 중복 태그** | 논문이 자식 hub와 그 부모 hub에 동시에 태그됨 (자식의 frontmatter `parent`로 판정) | 부모 태그 제거 — 계층은 `parent`로 이미 함의됨 |
+| L1 | 깨진 wikilink | `[[target]]`이 실재 노트로 해석 안 됨 | 대상 생성 or 링크 수정/삭제 |
+| L2 | orphan 논문 | inbound 0 + 어느 hub에도 안 걸림 | 적합 hub에 링크 |
+| L3 | 누락 교차참조 | 같은 hub의 두 논문이 서로 링크 없음 | 양쪽 `wiki_link` |
+| L4 | stale hub 요약 | hub 본문이 현재 백링크 논문들을 반영 못 함 | 요약 재작성 diff. **교체되는 문단에 판단이 섞여 있으면 먼저 통찰 후보로 건진다** |
+| L5 | 노트 간 모순 | 같은 hub 논문 간 상충 주장(수치·supersede) | 모순 명시 한 줄. **모순/보완 판정 자체는 통찰 후보** |
+| L6 | 누락 hub | ≥3편에 반복되는 주제인데 hub 없음 | 신규 hub 후보 |
+| L7 | data gap | 주장의 근거 논문이 vault에 없음 | 검색어 *제안*만. 자동 fetch 금지. **"이 축이 비어 있다"는 통찰 후보** |
+| L8 | 링크 안 된 언급 | hub 본문이 vault 논문을 평문으로만 부름 | `[[slug\|표기]]`로 교체 (표기 유지) |
+| L9 | 부모 hub 중복 태그 | 논문이 자식 hub와 그 `parent`에 동시 태그 | 부모 태그 제거 — 계층은 `parent`로 함의. 부모 본문엔 `## 하위 갈래`로 자식 링크 |
 
-L5·L6은 비용이 크므로 **같은 hub 클러스터 안으로 한정**하고, scope가 hub 하나면 그 클러스터만 본다.
+- L5·L6은 같은 hub 클러스터 안으로 한정.
+- L8 대조는 **뜻으로** — 본문은 축약(`HaluMem`), slug는 부제 포함(`halumem-memory-hallucination`). 문자열만 보면 실재 노트를 미수록으로 오판한다. hub 본문을 새로 쓸 때(L4 포함)도 vault 논문은 반드시 링크, vault에 없는 이름은 평문으로 두고 L7 후보.
 
-**L9가 필요한 이유**: 부모 태그를 같이 달면 부모 hub의 멤버 수가 자식들의 합으로 부풀어 분류 기능을 잃는다. 실측에서 한 부모 hub가 vault 논문의 2/3를 흡수했고, 그 hub의 전용 소속 논문은 1편뿐이었다. 부모 hub는 논문 목록이 아니라 **자식 hub를 묶는 인덱스**여야 한다 — 부모 본문에 `## 하위 갈래`로 자식 hub 링크를 두면 탐색 경로는 유지된다.
-
-**L8 매칭 주의**: 본문은 축약 표기로 부르는데 slug에 부제가 붙어 문자열 매칭이 실패하는 경우가 많다 — `HaluMem` → `halumem-memory-hallucination`, `MemOS` → `memos-memory-os`, `Zep` → `zep-temporal-knowledge-graph`. **뜻으로 대조**할 것. 문자열만 보면 실재하는 노트를 미수록으로 오판해 ingest 후보로 넘긴다.
-
-**L8이 필요한 이유**: hub 소속은 논문 쪽에서 `[[hub]]`로 선언되지만 hub 본문은 그 목록을 갖지 않는다. 그래서 hub 본문이 논문을 평문으로 부르면 그 관계는 링크 그래프에 존재하지 않고, hub를 읽어도 어디로 갈지 알 수 없다. **hub 본문을 새로 쓰거나 고칠 때(L4 포함) vault에 노트가 있는 논문은 반드시 링크한다** — 산문 가독성은 alias 표기(`[[finmem\|FinMem]]`)로 지킨다. vault에 없는 이름은 평문으로 두고 L7 gap 후보로 넘긴다.
-
-## Steps (tool sequence)
+## Steps
 
 | # | 동작 | 도구 |
 |---|---|---|
-| 1 | scope 확정 (기본 "all") | (대화/입력) |
-| 2 | hub 목록 fetch | `wiki_list_hubs()` |
-| 3 | **링크 그래프 확보 — 1콜.** 노트별 inbound · 고아 · 깨진 링크 · 표기 불일치를 한 번에 받는다 | `wiki_backlinks()` |
-| 4 | 본문이 **실제로 필요한 노트만** 읽기 — hub 본문 전체(L4·L8), 모순 판정(L5)·gap 판정(L7) 대상 논문. L1·L2·L3은 Step 3 결과만으로 판정된다 | `wiki_read_note(slug)` (선별) |
-| 5 | L1~L7 판정 → 항목별 제안 diff 생성 (slug로 특정) | (LLM 추론) |
-| 6 | **리포트 + diff를 사용자에게 보여주고 승인 요청** | (대화) |
-| 7 | 승인된 항목만 반영 — 링크 추가/노트 갱신/신규 hub 생성 | `wiki_link` / `wiki_write_note` |
-| 8 | lint 로그 append | `wiki_read_note("_meta/lint-log")` + `wiki_write_note("_meta/lint-log", ...)` |
+| 1 | scope 확정 (기본 all) | — |
+| 2 | hub 목록 | `wiki_list_hubs()` |
+| 3 | 링크 그래프 1콜 — inbound·고아·깨진 링크·표기 불일치 | `wiki_backlinks()` |
+| 4 | 본문이 필요한 노트만 읽기 — hub 본문(L4·L8), L5·L7 대상 논문. **L1·L2·L3은 step 3만으로 판정** | `wiki_read_note` (선별) |
+| 5 | L1~L9 판정 → 항목별 diff | (LLM) |
+| 6 | 리포트 + diff → **승인 요청** | (대화) |
+| 7 | 승인된 항목만 반영 | `wiki_link` / `wiki_write_note` |
+| 8 | 로그 append | `wiki_read_note("_meta/lint-log")` → `wiki_write_note` |
 
-## Step 3 결과 읽는 법
-`wiki_backlinks()` 응답은 네 블록이다. **L1·L2·L3은 여기서 끝난다 — 본문을 읽지 말 것.**
+**step 3 응답 읽기**: `⚠️ 깨진 링크` → L1 · `✏️ 표기 불일치` → L1 하위(링크는 살아 있음, 우선순위 낮음) · `🕳️ 고아 노트` → L2 후보(`tech-blog-digest/`·`research-autopilot/`·`_meta/`는 제외) · `📇 backlink` → L2·L3 입력. `tech-blog-digest/`의 깨진 링크는 미수록 논문이다 — 지우지 말고 L7 후보로.
 
-| 블록 | 뜻 | 매핑 |
-|---|---|---|
-| `⚠️ 깨진 링크` | 본문 `[[target]]`이 실재 노트로 해석 안 됨 | **L1** 그대로 |
-| `✏️ 표기 불일치` | 해석은 되지만 본문 표기가 노트명과 다름(대소문자 등) | **L1** 하위 — 링크는 살아 있으니 우선순위 낮음 |
-| `🕳️ 고아 노트` | inbound 0 | **L2** 후보. `tech-blog-digest/`·`research-autopilot/`·`_meta/`는 원래 inbound가 없는 게 정상이라 제외 |
-| `📇 backlink` | 노트별 inbound 목록 | **L2·L3** 판정 입력. 같은 hub를 inbound로 갖는 논문 쌍 중 서로 링크 없는 것이 L3 |
+**대규모 vault**: L4/L5는 hub 클러스터 단위(📇의 inbound로 대상 선별). 버거우면 `scope`를 hub 하나로 나눠 돌린다. 2회 좁혀도 안 되면 일부를 건너뛰고 추정하지 말고 멈춰서 도구 보강을 제안한다.
 
-L8은 이 응답으로 안 잡힌다 — hub 본문을 읽어야 한다(15개 안팎, 노트당 30줄 수준이라 저렴). Step 4에서 hub를 읽을 때 같이 판정한다.
+**통찰 후보 (L4·L5·L7)**: 판단이 나오면 `insight-capture` 후보 제시 모드로 — 한 줄 후보 + 근거 노트 + 발견 경로, 초안은 쓰지 않는다. 사용자가 안 고르면 `lint-log` deferred에만. L4로 hub 본문을 교체할 땐 지워지는 문단을 먼저 읽는다. hub 본문(현재 상태) vs 통찰(시점 박힌 판단)의 경계는 `insight-capture` 기준.
 
-주의: 깨진 링크가 `tech-blog-digest/`에서 나오면 대개 "다이제스트가 소개했지만 아직 ingest 안 한 논문"이다 — 링크를 지우지 말고 **L7 gap** 후보로 넘긴다.
-
-## 대규모 vault 대응 (Step 4 비용)
-Step 3이 1콜이라 링크 정합성 점검은 vault 크기와 무관하게 저렴하다. 남는 비용은 Step 4의 **선별** 본문 읽기뿐.
-- **L4/L5는 hub 클러스터 단위로** — `wiki_backlinks()`의 inbound 목록에서 그 hub에 걸린 논문만 골라 읽는다.
-- 그래도 버거우면 `scope`를 hub 하나로 좁혀 여러 번 나눠 돌린다.
-- **2회 이상** 좁혀도 안 되면 임의 우회(일부 노트 건너뛰고 추정) 금지. 멈추고 사용자에게 구조적 진단과 함께 도구 보강을 제안한다.
-
-## 통찰 후보 넘기기 (L4·L5·L7)
-L5(모순 판정)와 L7(공백 관찰)은 **판정 자체가 판단**이고, L4는 hub 본문을 교체하며 **이전 판단을 지운다**. 이 셋에서 나온 판단을 `_meta/lint-log`의 deferred 절에만 적으면 시스템 로그에 묻혀 연구에 쓰이지 않는다 — 실제로 그렇게 여러 건이 묻혔다.
-
-- 판단이 나오면 `insight-capture`의 **후보 제시 모드**로 넘긴다: 한 줄 후보 + 근거 노트 + 발견 경로. **초안은 쓰지 않는다.**
-- 사용자가 안 고르면 그대로 넘어간다 — 승인을 압박하지 않는다. 그때만 `lint-log`에 남긴다.
-- **hub 본문(현재 상태) vs 통찰(시점이 박힌 판단)** 경계는 `insight-capture`의 판별 기준을 따른다: *반년 뒤 이 서술이 틀리게 됐을 때 그런 판단을 했었다는 사실이 남아야 하는가.*
-- L4로 hub 본문을 교체할 때는 **지워지는 문단을 먼저 읽고** 판단이 섞였으면 후보로 올린 뒤 교체한다. 순서가 뒤바뀌면 이미 사라진 뒤다.
-
-## lint 로그 형식 (vault/_meta/lint-log.md)
-grep 가능한 한 줄 헤더 규약 (`grep "^## \[" lint-log.md | tail -5`로 최근 이력 확인).
-
+## lint 로그 (`_meta/lint-log.md`)
 ```markdown
-# Lint Log
-
 ## [2026-07-07] lint | scope=all | 제안 7 · 승인 5
-
 **Applied**:
 - L2 orphan: papers/blip-2 → topics/vlm 링크 추가
-- L4 stale: topics/vlm 요약 갱신 (신규 논문 3편 반영)
-
 **Rejected**:
-- L5 모순: blip-2 vs flamingo VQA 수치 — 사용자 보류(측정 조건 다름)
-
+- L5 모순: blip-2 vs flamingo VQA 수치 — 보류(측정 조건 다름)
 **Deferred (data gap)**:
-- L7: Q-Former 후속 변형 논문 vault에 없음 → 검색어 "q-former variants 2024" 제안
+- L7: Q-Former 후속 변형 없음 → "q-former variants 2024"
 ```
+헤더는 `grep "^## \[" lint-log.md | tail -5`로 읽는다.
 
-## Output format (사용자 응답)
-
-```
-🩺 wiki-lint — scope={scope}
-   스캔: 논문 {P}편 · hub {H}개 · 링크 {L}개
-   발견: {N}건 (L1 깨진링크 {a}[+표기불일치 {a2}] · L2 orphan {b} · L3 누락참조 {c} · L4 stale {d} · L5 모순 {e} · L6 누락hub {f} · L7 gap {g} · L8 링크안된언급 {h} · L9 부모중복 {i})
-
-[L2] orphan: papers/{slug}
-     → topics/{hub}에 링크 추가 제안
-     ```diff
-     + - [[papers/{slug}]] — {한 줄}
-     ```
-[L4] stale: topics/{hub} 요약
-     ```diff
-     - {옛 요약}
-     + {새 요약 — 백링크된 논문 {k}편 반영}
-     ```
-...
-
-승인하실 항목 번호를 알려주세요 (예: "L2, L4 반영"). 반영 후 _meta/lint-log에 기록합니다.
-```
+## Output
+스캔 규모(논문·hub·링크) · 발견 건수 L1~L9별 · 항목마다 `[Lx] slug → 제안 + diff` · "승인할 번호를 알려달라".
 
 ## Failure handling
-- Step 2 `wiki_list_hubs`가 "hub 없음" → topics/에 hub가 아직 없는 초기 vault. L2·L3·L4·L5는 skip, L1(깨진링크)·L6(hub 신설 제안)만 수행.
-- Step 3 `wiki_backlinks`가 "vault가 비어 있습니다" → 점검할 노트 없음. 스캔 결과 0건으로 리포트하고 종료.
-- Step 4 노트 다수로 컨텍스트 초과 우려 → "대규모 vault 대응" 절대로. L4/L5 대상을 hub 하나로 좁히도록 사용자에게 안내.
-- Step 7 `wiki_write_note`/`wiki_link` 실패 → 디스크 권한/vault 경로 확인 안내. 부분 반영됐으면 어디까지 됐는지 명시.
-- Step 8 로그 read 실패 → 첫 호출이면 헤더(`# Lint Log`)만 가진 새 파일 생성.
-
-## 후속 호출 제안
-- 점검 주기를 자동화하려면 `schedule`/`/loop`로 야간 lint (제안까지만 자동, 반영은 여전히 사용자 승인).
-- L7 data gap을 채우려면 제안된 검색어로 `paper-ingest`.
-- L4·L5·L7에서 나온 판단은 `insight-capture`(후보 제시 모드)로 — 판단은 hub 본문이 아니라 `notes/`에 누적된다.
-- hub 구조 자체가 흔들리면(누락 hub 다수) hub 재설계는 사용자 판단 영역 — 본 스킬은 후보만 제시.
+- hub 없음(초기 vault) → L1·L6만. `wiki_backlinks`가 빈 vault → 0건 보고 종료.
+- 컨텍스트 초과 우려 → scope를 hub 하나로 좁히도록 안내.
+- 쓰기 실패 → 경로·권한 안내, 부분 반영 지점 명시. 로그 없음 → `# Lint Log` 헤더로 생성.

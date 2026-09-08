@@ -97,6 +97,20 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 
 ---
 
+### research-autopilot 운용
+
+```
+시작   /loop 10m /research-autopilot scope=graph-rag,finance-agents max_papers=10   권장
+       /loop 10m /research-autopilot graph rag랑 금융 에이전트                        자연어 — 첫 tick이 hub로 해석해 확정 slug를 보여주고 고정
+       /loop 10m /research-autopilot                                              scope 없음 → hub 목록과 함께 묻고, 답할 때까지 돌지 않는다
+       /loop /research-autopilot scope=…                                          지켜볼 때만 (동적 self-pacing)
+정지   "autopilot 멈춰" · 제어 노트 stop: true (다음 tick) · 자동(max_papers·큐 소진·연속 실패 3) · 세션 종료
+재개   새 /loop. scope는 다시 준다 (max_papers·min_velocity는 남는다)
+보고   정지 시 자동 → 채팅 + research-autopilot/<날짜>.md. "autopilot 보고" → 정지 없이 현재 실행 보고서만 (저장 없음)
+탐색   제어 노트 explore: true → 실행 중 발견한 hub 후보도 의도 안이면 탐색 주제로 편입(실행당 max_topics, 기본 3). 기본 false
+전제   세션 유지 (Mac 잠자기 방지 예: caffeinate -dimsu). 한 vault에 루프는 한 세션만
+```
+
 ## 설치
 
 ### 요구사항

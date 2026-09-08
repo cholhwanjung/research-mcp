@@ -39,18 +39,25 @@ async def get(url: str, params: dict | None = None, timeout: int = 30) -> dict |
     last_body: dict | str = ""
     async with aiohttp.ClientSession() as session:
         for attempt in range(len(RETRY_DELAYS) + 1):  # 최초 1 + 재시도 N
-            async with session.get(
-                url,
-                params=params,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-            ) as resp:
-                if resp.status == 429 and attempt < len(RETRY_DELAYS):
-                    await asyncio.sleep(RETRY_DELAYS[attempt])
-                    continue
-                if resp.content_type == "application/json":
-                    last_body = await resp.json()
-                else:
-                    last_body = await resp.text()
-                return last_body
+            try:
+                async with session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as resp:
+                    if resp.status == 429 and attempt < len(RETRY_DELAYS):
+                        await asyncio.sleep(RETRY_DELAYS[attempt])
+                        continue
+                    if resp.content_type == "application/json":
+                        last_body = await resp.json()
+                    else:
+                        last_body = await resp.text()
+                    return last_body
+            except asyncio.TimeoutError:
+                # 429를 늦게 돌려주는 서버(export.arxiv.org: 40~57초)에서는 timeout이 먼저 난다.
+                # 429와 같은 간격으로 재시도하고, 다 쓰면 그대로 raise — 호출측이 원인을 표면화한다.
+                if attempt >= len(RETRY_DELAYS):
+                    raise
+                await asyncio.sleep(RETRY_DELAYS[attempt])
     return last_body

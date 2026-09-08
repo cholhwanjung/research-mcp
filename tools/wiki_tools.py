@@ -99,6 +99,13 @@ def wiki_list(prefix: str = "papers") -> str:
     return f"📚 {prefix} ({len(items)})\n" + "\n".join(f"  - {i}" for i in items)
 
 
+HUB_TAGGING_RULE = (
+    "규칙: topics는 논문 자신의 주제인 기존 hub만(자유문자열 금지) · "
+    "자식 hub에 맞으면 부모는 붙이지 않음(계층은 parent로 함의) · "
+    "인용 관계는 소속 근거 아님 · hub 본문에서 vault 논문은 [[slug|표기]]로 링크"
+)
+
+
 def wiki_list_hubs() -> str:
     """vault `topics/*.md` 중 frontmatter `tier: hub`인 안정 hub 목록 + 메타 (ADR-022).
 
@@ -112,7 +119,8 @@ def wiki_list_hubs() -> str:
     hubs = _list_hubs()
     if not hubs:
         return "(hub 없음 — topics/*.md에 `tier: hub` 노트가 아직 없음)"
-    lines = [f"🏷️ Hubs ({len(hubs)})\n"]
+    # ADR-054: 태깅 규칙을 응답에 싣는다 — 스킬마다 반복하지 않고 hub를 고르는 순간에 보인다.
+    lines = [f"🏷️ Hubs ({len(hubs)})", HUB_TAGGING_RULE + "\n"]
     for h in hubs:
         line = f"- [[{h['slug']}]]"
         if h["title"] and h["title"] != h["slug"]:

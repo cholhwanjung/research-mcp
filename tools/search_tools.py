@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import urllib.parse
 from datetime import datetime, timezone
 
 from analysis.format import fmt_paper as _fmt_paper
 from core.filter import drop_surveys as _drop_surveys
+from analysis.ranking import citation_velocity
+from core.http import RETRY_DELAYS as _RETRY_DELAYS
 from core.http import get as _get
 from sources.semantic_scholar import lookup_error_message as _lookup_error_message
 from sources.arxiv import parse_arxiv as _parse_arxiv
@@ -15,6 +18,11 @@ from sources.semantic_scholar import (
     resolve_id as _resolve_id,
     ss_get as _ss_get,
 )
+
+
+# export.arxiv.org는 rate limit 시 429를 40~57초 뒤에 돌려준다(실측 2026-09-08).
+# 기본 30초로는 429를 보지 못하고 timeout만 나서 core.http의 429 백오프가 발동하지 않는다.
+ARXIV_TIMEOUT = 60
 
 
 async def search_papers(
@@ -45,9 +53,19 @@ async def search_papers(
         safe=":+",
     )
 
-    xml = await _get(url)
-    if not isinstance(xml, str):
-        return "❌ arXiv API 응답 오류"
+    try:
+        xml = await _get(url, timeout=ARXIV_TIMEOUT)
+    except asyncio.TimeoutError:
+        return (
+            f"⏳ arXiv 검색 응답 없음 — {ARXIV_TIMEOUT}초 × {len(_RETRY_DELAYS) + 1}회 모두 timeout. "
+            "rate limit일 수 있습니다. 잠시 후 다시 시도하세요."
+        )
+
+    # 정상 응답은 ATOM 피드다. 429 본문·빈 응답을 그대로 파서에 넘기면 0편이 되어
+    # "결과 없음"으로 위장된다 — 장애는 ⏳로 구분한다.
+    if not isinstance(xml, str) or "<feed" not in xml:
+        head = (xml if isinstance(xml, str) else str(xml)).strip()[:120]
+        return f"⏳ arXiv 검색 응답이 정상 피드가 아닙니다 (rate limit·장애 가능): {head or '(빈 응답)'}"
 
     papers = _parse_arxiv(xml)
     # ADR-021: title에 \bsurvey\b 포함된 논문은 워크플로우에서 의미 없음 → 제외.
@@ -122,6 +140,10 @@ async def get_paper_by_id(paper_id: str) -> str:
         lines.append(f"Fields: {', '.join(data['fieldsOfStudy'])}")
 
     lines.append(f"Citations: {data.get('citationCount', 0)}")
+    # ADR-054: 스킬이 산문으로 계산하던 velocity(ADR-004)를 응답에 싣는다.
+    if data.get("year") and data.get("citationCount") is not None:
+        vel = citation_velocity(data, datetime.now(timezone.utc).year)
+        lines.append(f"Velocity: {vel:.1f} /yr")
     lines.append(f"Influential Citations: {data.get('influentialCitationCount', 0)}")
     lines.append(f"References: {data.get('referenceCount', 0)}")
 
