@@ -13,7 +13,7 @@
 `reason` ∈ `user | max_papers | consecutive_failures | queue_exhausted | control_parse_error`. `scope_missing`은 정지가 아니라 **대기** — 로그 한 줄(첫 회)만, ②③④ 없음.
 
 ## 실행 보고서 (정지 ④ · "autopilot 보고")
-재료는 **로그뿐** — `_meta/autopilot-log.md`를 한 번 전체로 읽어 `run_started` 이후의 `title`·`tldr`·`hubs`·`source`·`rank`·`gate`·`velocity`·`insight_candidate`·`hub_candidate`·`new_hub`·`held`·`interrupted`·`topic`을 모은다. 노트를 다시 읽지 않는다. 채팅 출력 + `research-autopilot/<날짜>.md`(같은 날 둘째면 `-2`). 파일 안 논문은 `papers/<slug>` 평문 경로(`[[wikilink]]` 금지 — inbound가 생겨 hub 소속과 섞인다). vault 본문 격리 적용. "autopilot 보고"는 파일 저장 없음.
+재료는 **로그뿐** — `_meta/autopilot-log.md`를 한 번 전체로 읽어 `run_started` 이후의 `title`·`tldr`·`hubs`·`source`·`rank`·`gate`·`velocity`·`insight_candidate`·`hub_candidate`·`new_hub`·`held`·`interrupted`·`topic`·`vs_anchor`을 모은다. 노트를 다시 읽지 않는다. 채팅 출력 + `research-autopilot/<날짜>.md`(같은 날 둘째면 `-2`). 파일 안 논문은 `papers/<slug>` 평문 경로(`[[wikilink]]` 금지 — inbound가 생겨 hub 소속과 섞인다). 파일에 내부 메타 식별자 금지. "autopilot 보고"는 파일 저장 없음.
 
 ```
 📋 autopilot 실행 보고 — {run_started} → {정지 시각} · scope: {…} · 정지: {reason}
@@ -21,9 +21,10 @@
    {PA만 처리했으면: ⚠️ 신규 유입 없음 — scope 안 S1/S2 고갈, 백필만 돌았다. scope를 넓히거나 우선 큐를 채울 때}
 ## 들어온 논문         ← 1. {title} (arXiv:{id}) — papers/{slug} · {rank}/{source} · {gate} · hubs · vel {v} / {tldr}
 ## 탐색 주제           ← - {slug}: seed {n}건 · 들어옴 {m}편 · 승격 {hub|-}   (탐색 주제가 있을 때만; explore 편입은 "(explore)" 표시)
+                         anchor 주제는 - {slug} (anchor {title} · {relation} · judged {j} · 유용 상 {a}/중 {b}/하 {c}): 들어옴 {m}편 → member마다 "[접두사] {title} — {vs_anchor}" 한 줄 → "공통 인사이트 / 남은 한계" 2~3문장 (vs_anchor 줄만으로, 새 조사 금지)
 ## 통찰 후보 — 저장되지 않았다. 고르면 insight-capture 초안 모드로   ← - {slug}: {insight_candidate}
 ## 이번 배치가 말하는 것   ← 2~3문장, 위 TL;DR과 후보만으로. 새 조사·추측 금지. 근거 없으면 "종합할 공통점 없음"
-## 아침 할 일           ← figure on-demand 후보 · hub 후보 검토/새 hub 확인 · 탐색 주제 검토(seed 0건이면 query 수정, 관심 밖이면 줄 삭제) · 보류 {h}건 · scope 밖 {x}건 · wiki-lint(L4 stale 후보 hub)
+## 아침 할 일           ← figure on-demand 후보 · hub 후보 검토/새 hub 확인 · 탐색 주제 검토(seed 0건이면 query 수정, 관심 밖이면 줄 삭제, anchor 주제는 `[평가?]` 잔여·소진 여부) · 보류 {h}건 · scope 밖 {x}건 · wiki-lint(요약이 낡은 후보 hub)
 ```
 
 아침 검토: 보고서 → `grep "^## \[" _meta/autopilot-log.md`(`start` 수 ≠ 결과 수면 열린 반복) → `grep -o 'gate=[a-z]*' … | sort | uniq -c`. 그림은 `paper-ingest` override, `## 보류`·`## 건너뜀`은 줄을 지우면 되살아남, hub 요약은 `wiki-lint`, 통찰은 `insight-capture`, 대기열은 `reading-queue`.

@@ -26,40 +26,51 @@ scope = **hub slug 집합 ∪ 탐색 주제 slug 집합**. hub는 `wiki_list_hub
 
 해석: slug·자연어 모두 `wiki_list_hubs()`의 slug·alias·title·summary와 `## 탐색 주제`에 **뜻으로** 대응. 한 부모 아래로 묶이면 부모(자식 포함, "메모리" → `agent-memory`), 여러 hub에 걸치면 전부 포함. **어느 hub·탐색 주제에도 안 닿는 부분은 탐색 주제로 등록한다 — 묻지 않는다**: `- <slug> — <정의 한 줄> · query: "<arXiv 검색어(영어)>" · parent: <가장 가까운 hub|-> · members: [] · seeded: -`. slug는 hub 규약(영문 kebab). **첫 해석을 고정** — `scope_input`과 `scope`를 함께 저장, 다음 tick 인자가 `scope_input`과 같으면 재해석 없이 저장된 `scope`. 새로 해석했을 때만 보고 첫 줄에 `scope 확정: graph-rag (+temporal-leakage) · 탐색(신규): ts-forecasting-agents (parent finance-agents) ← "원문"`.
 
-탐색 주제는 `topics/` 노트가 아니다 — vault엔 아무것도 만들지 않는다. **`members` ≥ 3이 되면 hub로 승격**(Step 4c′). 승격 전 소속 논문은 closest 기존 hub(보통 parent)로 태그되고 `members`에만 기록된다.
+**anchor 탐색 주제** — 관계 표현("X를 도전한/X에서 평가한/X 리더보드 논문", "X를 학습·환경·데이터로 쓴 논문", "X의 후속·경쟁 벤치마크")이 있으면 hub alias 매칭보다 **anchor 해석이 우선**: `query:` 대신 `- <slug> — <정의> · anchor: <arxiv_id> · relation: <평가|활용|비교> · parent: <hub|-> · members: [] · seeded: - · judged: 0`. X는 vault(`wiki_search`·`wiki_read_note`) → `search_papers` 순으로 ID 해석. X가 hub 이름이면 소속 논문(📇 inbound `papers/`) 중 hub 정의에 맞는 벤치마크·데이터셋 논문만 velocity 순 `max_topics`(제어 노트, 기본 3)까지 한 줄씩 펼친다 — 나머지는 첫 tick 보고에 `펼치지 않음: …`으로. relation 기본 `평가`(`[평가?]`는 항상 동반), "학습·환경·데이터로 쓴" → `활용`, "후속·경쟁 **벤치마크**" → `비교`. "후속 논문·후속 연구·도전한 논문"은 벤치마크가 아니라 논문을 뜻하므로 기본(`평가`) — `비교`로 잡지 않는다. velocity로 자르지 않는다 — 회차 순서일 뿐, 큐에 넣을지는 유용도 판정("seed" 절). slug `<anchor slug>-<challengers|adopters|successors>`, parent는 anchor의 첫 `topics`.
 
-필터 (`all`이면 S0 외 전부 생략):
+탐색 주제는 `topics/` 노트가 아니다 — vault엔 아무것도 만들지 않는다. **`members` ≥ 3이 되면 hub로 승격**(Step 4c′). 승격 전 소속 논문은 closest 기존 hub(보통 parent)로 태그되고 `members`에만 기록된다. **anchor 주제는 승격하지 않는다** — 인용 관계는 소속 근거가 아니다. 그 집합은 anchor 노트 `cited_by`의 접두사·논문→anchor 링크·실행 보고서가 담는다.
+
+필터 (`all`이면 S0 외 전부 생략. scope에 hub가 없고 탐색 주제만이면 S1·S2·PA는 공집합 — S0 seed와 F만 돈다):
 
 | 지점 | 규칙 |
 |---|---|
 | S1 (깨진 링크) | **참조 노트**로 판정 — scope hub 소속 논문(📇 블록에서 `topics/<hub>` inbound의 `papers/`), scope hub 자신, scope hub를 `topics`로 가진 `notes/`에서 온 항목은 통과. 소속 없는 참조 노트(`tech-blog-digest/` 등)는 **항목 제목**으로 판정 — 애매하면 제외 |
 | PA | scope hub 소속 논문만 |
 | S2 (hub 평문 이름) | scope hub(자식 포함) 본문만 읽는다 |
-| S0 (seed) | `## 탐색 주제` 중 `members: []`·`seeded: -`인 것만 ("seed" 절) |
+| S0 (seed) | query 주제: `members: []`·`seeded: -`인 것 · anchor 주제: `## frontier`에 그 `via seed:<topic>` 항목이 없고 `seeded`가 `(소진)`·`(실패)`가 아닌 것 ("seed" 절) |
 | P0 우선 큐 | **필터 없음** |
-| Step 3.5 게이트 | 제목·초록이 어느 scope hub의 정의·alias에도, 어느 탐색 주제의 정의·query에도 맞지 않으면 `## 건너뜀`에 `scope 밖` |
-| 리필 | anchor는 scope 소속 논문(탐색 주제 `members` 포함), 후보는 제목이 scope hub 정의·alias 또는 탐색 주제 정의에 맞는 것만 |
+| Step 3.5 게이트 | 제목·초록이 어느 scope hub의 정의·alias에도, 어느 탐색 주제의 정의·query에도 맞지 않으면 `## 건너뜀`에 `scope 밖`. `via seed:<anchor 주제>` 항목은 통과 — seed 때 문맥으로 판정됐다(모델 카드는 초록에 벤치마크를 안 적는다) |
+| 리필 | anchor는 scope 소속 논문(query 주제 `members` 포함 · anchor 주제 `members`는 제외 — 인용 이웃은 관계를 보존하지 않는다, 그 주제는 재seed), 후보는 제목이 scope hub 정의·alias 또는 탐색 주제 정의에 맞는 것만 |
 | 신규 hub | `parent`가 scope 집합 안이어야 생성. 아니면 closest 기존 hub + `hub_candidate=`. **`explore: true`면** 후보가 `scope_input`의 의도 안에 들 때 탐색 주제로 등록(실행당 `max_topics`까지, query는 그 주제의 영어 검색어) — 다음 반복에 seed |
 
 실행 중 변경은 제어 노트에서 — 다음 반복부터. `## 건너뜀`의 `scope 밖`은 줄을 지우면 되살아난다. 탐색 주제 줄을 지우면 탐색 중단(이미 들어온 논문은 남는다).
 
 ## seed — 탐색 주제 부트스트랩 (S0)
-탐색 주제는 vault 참조가 없어 S1·S2·PA로 잡히지 않는다. 한 번만 외부에서 씨를 뿌리고, 그 뒤는 리필(인용 이웃)이 이어받는다.
-1. 대상: `## 탐색 주제` 중 `members: []`이고 `seeded: -`인 것. 한 반복에 하나.
+탐색 주제는 vault 참조가 없어 S1·S2·PA로 잡히지 않는다. 한 반복에 하나. **query 주제**는 한 번만 씨를 뿌리고 리필(인용 이웃)이 이어받는다. **anchor 주제**는 50편 회차로 anchor의 `cited_by`를 문맥 판정하고 에이전트가 유용도로 고른다 — velocity는 회차 순서일 뿐 컷이 아니다. 리필이 관계를 보존하지 않아 회차가 곧 리필이다.
+
+**query 주제**
+1. 대상: `members: []`이고 `seeded: -`인 것.
 2. `search_papers(query, max_results=20)` → arXiv ID 목록(survey는 도구가 이미 제외).
 3. vault 기수록(`wiki_read_note(arxiv_id)`)·`## 건너뜀`·`## 보류` 제외 → 남은 것에 `get_paper_by_id`의 `Velocity` → `min_velocity` 이상만(미달은 `## 보류` +30일).
 4. velocity 내림차순 상위 10건을 `## frontier`에 `- <arxiv_id> — <title> · vel <v> · via seed:<topic>`으로. 탐색 주제 줄 `seeded: <오늘>`. `action=refill source=S0 topic=<slug> added=N` 로그.
 5. 0건이면 `seeded: <오늘> (0건)` — 재시도하지 않는다. 아침에 query를 고치고 `seeded: -`로 되돌리면 다시 seed.
 
+**anchor 주제** (`anchor:`)
+1. 대상: `## frontier`에 `via seed:<topic>`이 남아 있지 않고 `seeded`가 `(소진)`·`(실패)`가 아닌 것.
+2. `get_citations_by_citations(anchor, top_k=judged+50, min_velocity=0, exclude_recent_year=False)` — velocity로 자르지 않는다(순서일 뿐), 기본 최근 1년 제외 필터는 도전자를 전부 잘라낸다. 응답의 `judged+1`번째부터가 이번 회차(앞은 이미 판정). 응답이 `judged` 이하면 `(소진)`.
+3. 이번 회차에서 vault 기수록·`## 건너뜀`·`## 보류`·`members` 제외 → anchor 노트 `cited_by`에 접두사가 이미 있는 항목은 그 접두사를 그대로 쓰고(문맥 호출 없음), 나머지만 `get_citation_contexts(citing, anchor)` 25건 단위 → 접두사 판정(`citation-analysis` step 7: `[평가]`·`[활용]`·`[비교]`·`[언급]`·`[평가?]`). 초록은 부르지 않는다.
+4. **유용도 판정** — 제목·문맥·연도·velocity로 상/중/하. **상**: anchor에서 새 방법·학습법·에이전트 설계를 검증, 실패 모드·한계 분석, 벤치마크 자체를 비판·확장 — 읽으면 인사이트가 나오는 것. **중**: anchor가 여러 평가 중 하나지만 논문 주제가 에이전트·도구 사용 방법론, 또는 `[평가?]`(본문이 확정). **하**: 점수만 보고(모델 카드·기술보고), 무관한 주제의 곁가지 평가. velocity·연도는 동률에만. **큐 진입**: relation에 맞는 상·중(`평가`면 `[평가]`+`[평가?]`), 그리고 relation 밖이라도 상(벤치마크를 비판·확장한 `[비교]` 등). 유용도 → velocity 순으로 `## frontier`에 `- <arxiv_id> — <title> · vel <v> · via seed:<topic> · [접두사] · 유용 <상|중>`. 하·relation 밖 중은 frontier에 넣지 않는다(보류도 아니다). 주제 줄 `judged: <judged+50>`·`seeded: <오늘>`; 응답이 끝났거나 **2회차 연속 상·중 0건**이면 `seeded: <오늘> (소진)`. `action=refill source=S0 topic=<slug> anchor=<id> judged=<n> added=N useful=<상>/<중>/<하>` 로그.
+5. 판정한 회차 전부를 anchor 노트 `cited_by`에 paper_id 기준 merge — `{paper_id, hubs: [], abstract_summary: <title>, cited_for: "[접두사] <문맥 한 줄> · 유용 <상|중|하>"}`, 접두사가 이미 있는 기존 항목은 유지(유용도만 덧붙인다). 다음 회차가 재판정하지 않고, anchor 노트가 도전자 명단의 데이터 레이어가 된다.
+
 ## 중요도 게이트 (Step 3.6)
 - 지표: `get_paper_by_id` 응답의 `Velocity`(인용수/연). 임계: 제어 노트 `min_velocity`(기본 10, 리필도 같은 값).
 - 통과: velocity ≥ 임계 **또는** 그 논문을 가리키는 vault 노트 ≥ 2 (frontier는 via anchor ≥ 2).
-- 면제: P0 · P1·P2 · PA · `resumed`. 대상: P3 단일 참조 · P4 · frontier · S0 seed(seed 시점에 판정, ingest 시 캐시로 재확인).
+- 면제: P0 · P1·P2 · PA · `resumed` · `via seed:<anchor 주제>`(`exempt(anchor)` — 유용도 판정이 게이트, velocity 미달로 보류하지 않는다). 대상: P3 단일 참조 · P4 · frontier · S0 query seed(seed 시점에 판정, ingest 시 캐시로 재확인).
 - 미달: `## 보류`에 velocity·날짜·재평가일(+30일). 재평가일 전엔 대기열 제외, 지나면 다시 후보. 통과하면 보류 줄 삭제. 메타 조회 실패 → +7일.
 - 입력은 Step 3.5의 `get_paper_by_id` 응답 — 추가 호출 없음.
 
 ## 자동 승인 규칙
-**저장 축은 자동, 판단 축은 사람.** 하위 스킬의 승인 게이트(`paper-ingest` 신규 hub, `citation-analysis` Step 8)는 이 표로 대체 — 미리보기는 내되 정지하지 않는다.
+**저장 축은 자동, 판단 축은 사람.** 하위 스킬의 승인 게이트(`paper-ingest` 신규 hub, `citation-analysis` vault 반영 미리보기)는 이 표로 대체 — 미리보기는 내되 정지하지 않는다.
 
 | 축 | 판정 | 남기는 것 |
 |---|---|---|
@@ -88,7 +99,7 @@ consecutive_failures: 0    # 정지 시 0
 frontier_anchors: []       # 리필에 쓴 anchor slug (순환)
 deleted_jobs: []           # 정지 시 지운 cron id. 새 실행 시작 시 비움
 explore: false             # true면 실행 중 발견한 hub 후보도 의도 안이면 탐색 주제로 (실행당 max_topics)
-max_topics: 3              # explore로 편입할 탐색 주제 상한 (실행당)
+max_topics: 3              # explore 편입·hub 이름 anchor 펼치기 상한 (실행당)
 ---
 # Autopilot 제어
 
@@ -107,11 +118,12 @@ autopilot이 풀지 못한 항목. 줄을 지우면 재시도.
 
 ## frontier
 대기열이 비었을 때 리필된 후보와 탐색 주제 seed. velocity 순. 처리되면 줄 삭제.
-- <arxiv_id> — <title> · vel <v> · via <anchor slug|seed:<topic>>
+- <arxiv_id> — <title> · vel <v> · via <anchor slug|seed:<topic>>{ · [접두사] · 유용 <상|중>}
 
 ## 탐색 주제
-scope의 자연어 중 hub에 없는 주제. 워커가 등록하고 seed한다. members ≥ 3이면 hub로 승격. 줄을 지우면 탐색 중단.
+scope의 자연어 중 hub에 없는 주제. 워커가 등록하고 seed한다. query 주제는 members ≥ 3이면 hub로 승격, anchor 주제는 승격 없음. 줄을 지우면 탐색 중단.
 - <slug> — <정의 한 줄> · query: "<arXiv 검색어>" · parent: <hub|-> · members: [] · seeded: -
+- <slug> — <정의 한 줄> · anchor: <arxiv_id> · relation: <평가|활용|비교> · parent: <hub|-> · members: [] · seeded: - · judged: 0
 ```
 
 **`_meta/autopilot-log.md` 이력** — append-only, frontmatter 없음. 한 반복 = `start` 헤더 + 결과 헤더 + `key=value` 3줄 + 빈 줄. 읽기는 헤더 `tail -3`, 쓰기는 `>>`.
@@ -121,13 +133,13 @@ scope의 자연어 중 hub에 없는 주제. 워커가 등록하고 seed한다. 
 ## [2026-09-04 23:12] autopilot | iter=7 | action=ingest | id=2604.01234 | slug=generative-agents | status=ok
 source=S2 rank=P2 hub_of_origin=agent-memory velocity=42.0 gate=exempt(P2) pages=14 figures=skipped refs=20 cites=18 resumed=false interrupted=-
 hubs=agent-memory topic=- new_hub=- hub_candidate=- links_fixed=2 held=1 insight_candidate=-
-title="Generative Agents: …" tldr="관찰·성찰·계획을 쌓는 메모리 스트림으로 …"
+title="Generative Agents: …" tldr="관찰·성찰·계획을 쌓는 메모리 스트림으로 …" vs_anchor=-
 
 ## [2026-09-05 06:02] autopilot | iter=21 | action=stop | reason=queue_exhausted
 processed=13 run_started=2026-09-04T23:00 scope=graph-rag,finance-agents scope_input="graph rag랑 금융 트레이딩 에이전트"
 ```
 
-enum — `action` ∈ `start|ingest|skip|refill|stop` · `source` ∈ `P0|S1|S2|S0|PA|F` · `rank` ∈ `P0|P1|P2|P3|P4|P5|-`(P5 = seed) · `topic` ∈ `<탐색 주제 slug>|-` · `status` ∈ `ok|partial|fail` · `gate` ∈ `exempt(<rank>)|pass(v=<velocity>)|pass(refs=<n>)` · `figures` ∈ `skipped|extracted|-` · `pages` ∈ `<int>|-`(`-`는 PDF를 안 읽은 PA·`resumed`) · `reason` ∈ `user|max_papers|consecutive_failures|queue_exhausted|scope_missing|control_parse_error` · `interrupted` ∈ `-|worker_rate_limit|worker_timeout|session|user_stop|consecutive_failures|unknown`(이어받아 닫은 반복에만). 없음·해당 없음은 전부 `-`. 셋째 줄 `title`·`tldr`·`insight_candidate`(200자)는 실행 보고서의 재료 — 보고서는 노트를 다시 읽지 않는다.
+enum — `action` ∈ `start|ingest|skip|refill|stop` · `source` ∈ `P0|S1|S2|S0|PA|F` · `rank` ∈ `P0|P1|P2|P3|P4|P5|-`(P5 = seed) · `topic` ∈ `<탐색 주제 slug>|-` · `status` ∈ `ok|partial|fail` · `gate` ∈ `exempt(<rank>|anchor)|pass(v=<velocity>)|pass(refs=<n>)` · `figures` ∈ `skipped|extracted|-` · `pages` ∈ `<int>|-`(`-`는 PDF를 안 읽은 PA·`resumed`) · `reason` ∈ `user|max_papers|consecutive_failures|queue_exhausted|scope_missing|control_parse_error` · `interrupted` ∈ `-|worker_rate_limit|worker_timeout|session|user_stop|consecutive_failures|unknown`(이어받아 닫은 반복에만). 없음·해당 없음은 전부 `-`. 셋째 줄 `title`·`tldr`·`insight_candidate`·`vs_anchor`(각 200자)는 실행 보고서의 재료 — 보고서는 노트를 다시 읽지 않는다.
 
 **`start`만 있고 결과 줄이 없으면 끊긴 반복** — 복구는 로그가 아니라 vault 상태로 판정한다(Step 0·3).
 
@@ -136,31 +148,32 @@ enum — `action` ∈ `start|ingest|skip|refill|stop` · `source` ∈ `P0|S1|S2|
 | # | 동작 | 도구 |
 |---|---|---|
 | 0 | **제어 읽기 + scope + 열린 start.** 디스패처의 `상태:` 줄이 있으면 로그 tail 생략(제어 노트는 본문 절이 필요해 읽는다). 제어 노트 없으면 템플릿 생성. 인자 `max_papers` 기록. **`stop: true`**(인라인 모드에서만 도달): Cron 도구가 있으면 `CronList`로 `deleted_jobs` id 생존 확인 → 살아 있으면 다시 지우고 종료. 아니면 인자에 scope가 있으면 새 실행(`stop: false`, `deleted_jobs: []`), 없으면 "정지 상태 — 새로 /loop scope=…" 한 줄 종료(로그 없음). **scope**: ① 인자 — `scope_input`과 같으면 저장된 `scope` 재사용, 다르면 해석·검증 후 갱신 + 확정 slug echo. hub에 안 닿는 부분은 `## 탐색 주제`에 등록하고 그 slug를 `scope`에 넣는다 ② 인자 없으면 제어 노트 `scope` — 둘 다 비면 `action=stop reason=scope_missing` 로그(직전 헤더가 이미 `scope_missing`이면 생략) + `ask=` 종료 — 제어 노트는 안 건드린다. `run_started` 비면 현재 시각. `max_papers > 0`이고 `processed >= max_papers` → `reason=max_papers` 정지 ①②. **열린 start**: 마지막 헤더가 결과 줄 없는 `start`면 대기열을 유도하지 않고 그 `id`·`iter`를 이어받아 Step 3으로(3.5·3.6은 통과로 보고 3.7도 생략, 결과 줄에 `interrupted=<원인>`). 아니면 `iter` = 마지막 + 1 | `wiki_read_note("_meta/autopilot")` · `grep … \| tail -3` · `wiki_list_hubs()` |
-| 1 | **대기열 유도** — 세 소스를 모아 **등급 순**으로 합친다. 전부 `## 건너뜀`·`## 보류`(재평가일 전)와 대조. (P0) `## 우선 큐` · (S1) 깨진 wikilink — `_meta/` 출처 제외, scope 필터, 등급은 `reading-queue` 기준(논문 노트 출처 P3, 다이제스트 P4, 다른 항목을 막으면 P1) · (S2) hub 본문의 평문 미수록 논문 — scope hub만(`all`이면 전부), `reading-queue` S2 판정(뜻으로 대조, 개념어 제외), P2 · (PA) 읽었지만 인용 지도 없는 논문 — scope 소속 `papers/` 중 `references`도 `cited_by`도 없는 것: `grep -L '^references:\|^cited_by:' <vault>/papers/*/*.md` ∩ 📇 scope 소속(본문 안 읽음; 코드 실행 없는 환경이면 PA 생략). · (S0) `## 탐색 주제` 중 `members: []`·`seeded: -`인 것이 있으면 이번 반복에 하나 seed("seed" 절) — 결과는 `## frontier`의 `via seed:<topic>` 항목, 등급 **P5**. **정렬 P0 → P1 → P2 → P3 → P4 → P5(seed) → PA → (F) `## frontier`의 나머지(velocity 순).** 같은 등급은 참조 노트 수 → scope 인자 순 → hub 본문 등장 순 | `wiki_backlinks()`, `wiki_read_note(hub)`, (S0) `search_papers`·`get_paper_by_id` |
+| 1 | **대기열 유도** — 세 소스를 모아 **등급 순**으로 합친다. 전부 `## 건너뜀`·`## 보류`(재평가일 전)와 대조. (P0) `## 우선 큐` · (S1) 깨진 wikilink — `_meta/` 출처 제외, scope 필터, 등급은 `reading-queue` 기준(논문 노트 출처 P3, 다이제스트 P4, 다른 항목을 막으면 P1) · (S2) hub 본문의 평문 미수록 논문 — scope hub만(`all`이면 전부), `reading-queue` S2 판정(뜻으로 대조, 개념어 제외), P2 · (PA) 읽었지만 인용 지도 없는 논문 — scope 소속 `papers/` 중 `references`도 `cited_by`도 없는 것: `grep -L '^references:\|^cited_by:' <vault>/papers/*/*.md` ∩ 📇 scope 소속(본문 안 읽음; 코드 실행 없는 환경이면 PA 생략). · (S0) seed 대상 탐색 주제(query: `members: []`·`seeded: -` / anchor: frontier에 그 항목 없음·미소진)가 있으면 이번 반복에 하나 seed("seed" 절) — 결과는 `## frontier`의 `via seed:<topic>` 항목, 등급 **P5**. **정렬 P0 → P1 → P2 → P3 → P4 → P5(seed) → PA → (F) `## frontier`의 나머지(velocity 순).** 같은 등급은 참조 노트 수 → scope 인자 순 → hub 본문 등장 순(P5 anchor seed는 유용도 → velocity) | `wiki_backlinks()`, `wiki_read_note(hub)`, (S0) `search_papers`·`get_paper_by_id` / `get_citations_by_citations`·`get_citation_contexts`·`wiki_read_note(anchor)` |
 | 1.5 | 전부 비면 **리필** 후 (F). 리필도 0건이면 `reason=queue_exhausted` 정지 ①② | (리필 절) |
 | 2 | **후보 → arXiv ID.** ID면 통과. 이름이면 ① 참조 노트 그 줄의 `(arXiv:ID)` ② `search_papers(제목, max_results=5)`에서 제목이 **뜻으로 일치**하는 것만(저자·연도 다르면 불채택). 실패 → `## 건너뜀`, 다음 후보. 3개 연속 건너뜀이면 `action=skip`으로 반복 종료 | `search_papers` |
 | 3 | **중복 검사 + 재개 판정.** 노트 **없으면** 3.5로(이어받는 중이면 4a). **있으면** ⓐ refs·cited_by 없고 `topics`가 scope와 겹침(`all`이면 무조건) → 3.5·4a 생략, 4b부터(`resumed=true`) ⓑ refs/cited_by 있고 **열린 start의 id** → 노트·그래프까지 쓰고 끊긴 것, Step 5·6만으로 닫는다(`interrupted=`) ⓒ 그 외 → Step 5 링크 정정만, 다음 후보 | `wiki_read_note(arxiv_id)` |
-| 3.5 | **scope 게이트** (`all` 아닐 때) — `get_paper_by_id`의 제목·초록이 어느 scope hub 정의·alias에도, 어느 탐색 주제 정의·query에도 안 맞으면 `## 건너뜀`에 `scope 밖 (<scope>)` | `get_paper_by_id` |
+| 3.5 | **scope 게이트** (`all` 아닐 때) — `get_paper_by_id`의 제목·초록이 어느 scope hub 정의·alias에도, 어느 탐색 주제 정의·query에도 안 맞으면 `## 건너뜀`에 `scope 밖 (<scope>)`. `via seed:<anchor 주제>`는 게이트 없이 통과(메타는 3.6·3.7용으로 읽는다) | `get_paper_by_id` |
 | 3.6 | **중요도 게이트** — 위 절. 판정을 `gate=`로 | (3.5 응답) |
 | 3.7 | **start 로그** — 대상 확정 직후, 무거운 작업 전. `velocity_est=`는 대기열 시점 추정값. 이어받는 중이면 생략 | `>>` |
 | 4a | **ingest** — `paper-ingest`, 단 `read_paper(max_pages=15)`, figure/table 단계 skip(`figures: []`, `figures_skipped: true`, `## Figures` 생략 한 줄), 신규 hub는 자동 승인 규칙. PA·`resumed`·`citation_pending`은 4a 생략 | (`paper-ingest`) |
-| 4b | **인용 분석** — `citation-analysis` `direction=both`, `top_k=20`. anchor가 최근 1~2년이면 `exclude_recent_year=False, min_velocity=0`. Step 8 자동 승인. refs/cites 쪽 신규 hub 없음(closest 기존 hub) | (`citation-analysis`) |
+| 4b | **인용 분석** — `citation-analysis` `direction=both`, `top_k=20`. anchor가 최근 1~2년이면 `exclude_recent_year=False, min_velocity=0`. 승인 게이트는 자동 승인. refs/cites 쪽 신규 hub 없음(closest 기존 hub) | (`citation-analysis`) |
 | 4c | **신규 hub 생성** (조건 충족 시) — 기존 hub와 같은 frontmatter(`tier: hub`, `title`, `slug`, `aliases`, `parent`, `related`, `summary`, `seed_paper`, `created_at`). `parent` 필수(`all` 아니면 scope 안). 본문의 소속 논문은 `[[slug\|표기]]`. 부모 hub `## 하위 갈래`에 `- [[slug]] — 한 줄`(절 없으면 신설) | `wiki_write_note("topics/<slug>")`, parent read/write |
-| 4c′ | **탐색 주제 소속·승격** — 이 논문 자신의 주제가 어느 탐색 주제와 맞으면 그 줄 `members`에 slug 추가(`topic=<slug>`). `members` ≥ 3이면 hub 생성: 4c와 같은 frontmatter(`parent`는 탐색 주제의 parent, `-`면 root; `seed_paper`는 첫 member), 본문에 members를 `[[slug\|표기]]`로, 각 member에 `wiki_link(member, <slug>)`, parent `## 하위 갈래` 갱신, 탐색 주제 줄에 `승격 <오늘>`, `new_hub=<slug>`. slug가 같으므로 scope 집합은 변하지 않는다. **`explore: true`**이고 이 논문의 주제가 어느 hub·탐색 주제에도 안 붙으며(`hub_candidate`) `scope_input`의 의도 안이면, 실행당 `max_topics`까지 탐색 주제로 등록(members에 이 논문) — 다음 반복에 seed | `wiki_write_note("_meta/autopilot")`, `wiki_write_note("topics/<slug>")`, `wiki_link` |
+| 4c′ | **탐색 주제 소속·승격** — 이 논문 자신의 주제가 어느 탐색 주제와 맞으면 그 줄 `members`에 slug 추가(`topic=<slug>`). `members` ≥ 3이면 hub 생성: 4c와 같은 frontmatter(`parent`는 탐색 주제의 parent, `-`면 root; `seed_paper`는 첫 member), 본문에 members를 `[[slug\|표기]]`로, 각 member에 `wiki_link(member, <slug>)`, parent `## 하위 갈래` 갱신, 탐색 주제 줄에 `승격 <오늘>`, `new_hub=<slug>`. slug가 같으므로 scope 집합은 변하지 않는다. anchor 주제의 소속은 4d가 관계로 정하고 승격하지 않는다. **`explore: true`**이고 이 논문의 주제가 어느 hub·탐색 주제에도 안 붙으며(`hub_candidate`) `scope_input`의 의도 안이면, 실행당 `max_topics`까지 탐색 주제로 등록(members에 이 논문) — 다음 반복에 seed | `wiki_write_note("_meta/autopilot")`, `wiki_write_note("topics/<slug>")`, `wiki_link` |
+| 4d | **anchor 관계 확정** (`via seed:<anchor 주제>` 논문만) — 4a에서 읽은 본문으로 접두사를 확정(`[평가?]`→`[평가]`/`[언급]`; 15쪽 안에 anchor 언급이 없으면 seed 문맥을 쓰고 접두사는 그대로) + `vs_anchor` 한 줄(200자: anchor에서 무엇을 어떻게 했고, 무엇을 드러냈고, 무엇이 부족한가). anchor 노트 `cited_by`의 이 논문 항목을 `hubs`·`abstract_summary`·`cited_for`(접두사+vs_anchor)로 갱신 · `wiki_link(<arxiv_id>, <anchor slug>, note="[접두사] <vs_anchor>")`. 확정 접두사가 `[언급]`이 아니면 `members`에 추가(`topic=<slug>`), `[언급]`이면 `topic=-` | `wiki_read_note(anchor)`·`wiki_write_note(anchor)`, `wiki_link` |
 | 5 | **링크 정정** — 이 논문을 가리키던 `[[old]]`/`[[old\|표기]]`를 `[[<slug>\|<표기 또는 old>]]`로. 참조 노트마다 read → 토큰 치환 → write(frontmatter 보존). `_meta/`는 제외. source 무관하게 scope hub 본문에 이 논문 이름이 평문으로 남아 있으면 `[[slug\|표기]]`(축약 표기도 뜻으로 대조) — 방금 처리한 논문에 한정, 다른 논문은 `wiki-lint` 몫 | `wiki_read_note`, `wiki_write_note` |
-| 6 | **상태 갱신 + 결과 로그** — 우선 큐·frontier에서 해당 줄 제거, `processed += 1`(ok/partial), `consecutive_failures` ok면 0·fail이면 +1. 결과 헤더 + `key=value` 3줄 append(이어받은 반복이면 `interrupted=`). `gate=`·검증 `velocity=`·`topic=`(4c′ 소속이면 slug)·`title`·`tldr`·`insight_candidate` | `wiki_write_note("_meta/autopilot")`, `>>` |
+| 6 | **상태 갱신 + 결과 로그** — 우선 큐·frontier에서 해당 줄 제거, `processed += 1`(ok/partial), `consecutive_failures` ok면 0·fail이면 +1. 결과 헤더 + `key=value` 3줄 append(이어받은 반복이면 `interrupted=`). `gate=`·검증 `velocity=`·`topic=`(4c′/4d 소속이면 slug)·`title`·`tldr`·`insight_candidate`·`vs_anchor`(4d, 아니면 `-`) | `wiki_write_note("_meta/autopilot")`, `>>` |
 | 7 | **종료 검사** — `consecutive_failures >= 3` → 정지 ①②(`consecutive_failures`) + 진단 한 줄. `max_papers` 도달 → 정지 ①②(`max_papers`) — 다음 tick을 기다리지 않는다. 정지했으면 `stop_reason` | — |
 
-**쓰기 순서 (고정)**: ① 논문 노트 → ② 인용 frontmatter → ③ 그래프 → ④ 논문→hub 링크·신규 hub·부모 hub → ⑤ 참조 노트 링크 정정. **새 slug를 가리키는 링크는 노트 파일이 생긴 뒤에만** — 어디서 끊겨도 깨진 링크가 새로 생기지 않는다.
+**쓰기 순서 (고정)**: ① 논문 노트 → ② 인용 frontmatter → ③ 그래프 → ④ 논문→hub 링크·신규 hub·부모 hub·(4d) anchor 노트 `cited_by`·논문→anchor 링크 → ⑤ 참조 노트 링크 정정. **새 slug를 가리키는 링크는 노트 파일이 생긴 뒤에만** — 어디서 끊겨도 깨진 링크가 새로 생기지 않는다.
 
 **정지 처리 ①② (워커)**: ① `## [ts] autopilot | iter=N | action=stop | reason=…` + `processed=… run_started=… scope=… scope_input="…"` append ② 제어 노트 `stop: true`, `scope: []`, `scope_input: ''`, `run_started: ''`, `processed: 0`, `consecutive_failures: 0`(`max_papers`·`min_velocity`·`frontier_anchors`·`deleted_jobs`·본문 절 유지) → 보고 `stop_reason`. 워커는 자기 반복을 닫은 뒤에만 ①②를 하므로 열린 start를 남기지 않는다. `scope_missing`은 대기 — ②를 하지 않는다.
 
 ## 리필 — 대기열이 비었을 때
 다음 논문은 새 검색어가 아니라 **vault가 중심으로 삼은 논문의 인용 이웃**에서 — 사용자 관심(vault 구조) × 외부 중요도(velocity).
-1. anchor — 📇 블록에서 inbound 최다 `papers/` 3편(`all` 아니면 scope hub inbound 논문 중). `frontier_anchors`에 있는 것은 건너뛰어 순환(다 썼으면 비우고 처음부터).
+1. anchor — 📇 블록에서 inbound 최다 `papers/` 3편(`all` 아니면 scope hub inbound 논문 ∪ query 주제 `members` 중; anchor 주제 `members`는 제외 — 그 주제는 재seed). `frontier_anchors`에 있는 것은 건너뛰어 순환(다 썼으면 비우고 처음부터).
 2. anchor마다 `arxiv_id`로 `get_citations_by_citations(id, top_k=10, min_velocity=<제어 노트>)` + `get_references_by_citations(id, top_k=10, min_velocity=<같은 값>)`. 최근 1~2년 anchor는 citations에 `exclude_recent_year=False`.
-3. 필터 — arXiv ID 있는 것만 → vault 기수록 제외(`wiki_read_note(arxiv_id)`) → `## 건너뜀` 제외 → `all` 아니면 제목이 scope hub 정의·alias에 맞는 것만(애매하면 제외).
-4. velocity 내림차순 상위 10건을 `## frontier`에, anchor 3편을 `frontier_anchors`에. `action=refill anchors=a,b,c added=N scope=…` 로그.
+3. 필터 — arXiv ID 있는 것만 → vault 기수록 제외(`wiki_read_note(arxiv_id)`) → `## 건너뜀` 제외 → `all` 아니면 제목이 scope hub 정의·alias 또는 탐색 주제 정의에 맞는 것만(애매하면 제외).
+4. velocity 내림차순 상위 10건을 `## frontier`에, anchor 3편을 `frontier_anchors`에. `action=refill anchors=a,b,c added=N scope=…` 로그(S0 anchor 회차는 `source=S0 topic= anchor= judged= useful=`).
 5. 0건이면 다음 anchor 3편으로 한 번 더. 그래도 0건 → `queue_exhausted` 정지 ①②.
 
 frontier는 SS 유래라 vault에서 유도할 수 없어 저장한다. 오래된 항목은 Step 3 중복 검사가 무해화한다.
@@ -169,8 +182,8 @@ frontier는 SS 유래라 vault에서 유도할 수 없어 저장한다. 오래�
 ```
 🤖 autopilot iter {N} — {ingest|skip|refill|stop} · scope: {hub, …|all}
    (새로 해석했을 때만) scope 확정: {slug, …} (+{자식}) ← "{scope_input}"
-   {title} (arXiv:{id}) · {rank}/{source}{ · resumed}{ · 이어받음 interrupted={원인}} · vel {v} · hubs: {…}{ · 탐색: {topic}} · new hub: {-|slug}
-   TL;DR: {tldr}{ · 통찰 후보: {insight_candidate}}
+   {title} (arXiv:{id}) · {rank}/{source}{ · resumed}{ · 이어받음 interrupted={원인}} · vel {v} · hubs: {…}{ · 탐색: {topic}{ [접두사]}} · new hub: {-|slug}
+   TL;DR: {tldr}{ · vs {anchor}: {vs_anchor}}{ · 통찰 후보: {insight_candidate}}
    링크 정정 {k}건 · 보류 {h}건 · 이번 실행 누계 {processed}편{ / max {max_papers}} · 대기열 잔여 ≈{q} (frontier {f})
    → 다음 tick 대기   |   ⏹ 정지: {reason} — cron 종료, scope·카운터 비움. 재개는 새 /loop
 summary iter= action= id= slug= status= hubs= topic= new_hub= hub_candidate= links_fixed= held= processed= queue= frontier= interrupted= stop_reason= ask=
@@ -183,6 +196,7 @@ summary iter= action= id= slug= status= hubs= topic= new_hub= hub_candidate= lin
 - **반복 중 컨텍스트 압축** — 아직 안 쓴 중간 결과가 요약됐으면 추측하지 말고 도구를 다시 부른다(`read_paper`는 디스크, SS는 1주 캐시).
 - Step 2 무결과·제목 불일치 → 건너뜀(`arXiv 미해석`).
 - S0 `search_papers` 실패(429·timeout) → 이번 반복은 seed 생략, 다음 반복 재시도. 3회 연속이면 탐색 주제 줄에 `seeded: <오늘> (실패)`로 표시하고 멈춘다(아침에 query 수정 후 `seeded: -`). seed 0건은 실패가 아니다.
+- S0 anchor 회차: `get_citations_by_citations` `⏳` → 위와 같다. `get_citation_contexts` `⏳`는 한 번 재시도, 그래도면 `[평가?]`(4d가 본문으로 확정). 회차에서 상·중 0건이면 실패가 아니다 — `judged`만 올리고 다음 반복에 다음 회차(2회차 연속이면 소진).
 - Step 3.5 scope 밖 · Step 3.6 미달 → 실패 아님, `consecutive_failures`에 안 센다. 메타 조회 실패로 판정 불가 → 보류 +7일.
 - `⏳`(SS 거절·일시 장애)는 없는 논문이 아니다 — 건너뜀·보류에 넣지 않고 `status=fail`(진단 `SS 429`)로 닫고 우선 큐 항목은 남긴다. `❌`만 미매핑. `⏳` 3회 연속이면 `consecutive_failures` 정지가 밤새 헛도는 것을 막는다.
 - Step 4a `get_paper_by_id`·PDF 실패 → `paper-ingest` Failure handling, `status=fail`.

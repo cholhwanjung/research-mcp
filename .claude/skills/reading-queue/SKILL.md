@@ -25,9 +25,9 @@ inputs:
 | S2 | hub·통찰 노트 본문이 평문으로 부르는 미수록 논문 | LLM 판정 (아래) |
 | S3 | `notes/*.md`의 `## 열린 질문` | 논문 미특정이면 검색어로만 |
 
-**S2 두 번 거르기**: ① vault에 이미 있는가 — **뜻으로 대조**(본문 `HaluMem` vs slug `halumem-memory-hallucination`). 있으면 대기열이 아니라 링크 누락 → `wiki-lint` L8로 넘긴다. ② 논문인가 개념인가 — `MoE`·`BM25`·`SFT` 같은 개념·기법명 제외, 특정 논문 고유명(`Mem0`, `FinCon`)만. 애매하면 제외.
+**S2 두 번 거르기**: ① vault에 이미 있는가 — **뜻으로 대조**(본문 `HaluMem` vs slug `halumem-memory-hallucination`). 있으면 대기열이 아니라 링크 누락 → `wiki-lint`(링크 안 된 언급 점검)로 넘긴다. ② 논문인가 개념인가 — `MoE`·`BM25`·`SFT` 같은 개념·기법명 제외, 특정 논문 고유명만. 애매하면 제외.
 
-## 우선순위 — 그것의 부재로 무엇이 막혀 있는가
+## 우선순위
 
 | 등급 | 조건 |
 |---|---|
@@ -48,18 +48,10 @@ inputs:
 | 4 | S2 판정 | (LLM) |
 | 5 | 제외 목록 대조 | `wiki_read_note("_meta/reading-queue")` |
 | 6 | P1~P4 부여·정렬 → 출력 | (LLM) |
-| 7 | (사용자가 제외 지시 시만) append | `wiki_write_note("_meta/reading-queue", …)` |
-
-## 제외 목록 (`_meta/reading-queue.md`)
-```markdown
-# Reading Queue — 제외 목록
-- BM25 — 개념·기법명이지 논문이 아님
-- Mini-o3 — 관심 밖 (2026-09-02)
-```
-한 줄 = 한 항목. 되살리려면 줄을 지운다.
+| 7 | (사용자가 제외 지시 시만) `_meta/reading-queue.md`에 append — 한 줄 = 한 항목 `- <이름> — <이유>`. 되살리려면 줄을 지운다 | `wiki_write_note("_meta/reading-queue", …)` |
 
 ## Output
-후보 수·제외 반영 수 → P1~P4 섹션(항목: 이름 · 막고 있는 것/부르는 hub/참조 논문; P4는 개수만 가능) → `🔗 링크만 누락`(표기 → `[[slug]]`, wiki-lint L8) → `❓ 검색어만`(어느 열린 질문에서) → "제외할 항목이 있으면 이유와 함께".
+후보 수·제외 반영 수 → P1~P4 섹션(항목: 이름 · 막고 있는 것/부르는 hub/참조 논문; P4는 개수만 가능) → `🔗 링크만 누락`(표기 → `[[slug]]`, `wiki-lint` 몫) → `❓ 검색어만`(어느 열린 질문에서) → "제외할 항목이 있으면 이유와 함께".
 
 ## Failure handling
 - `_meta/reading-queue.md` 없음 → 제외 0건으로 진행, 제외 지시 시 생성.

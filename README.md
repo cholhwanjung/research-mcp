@@ -93,7 +93,6 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | `insight-capture` | "이 통찰 저장", "notes에 정리" | 논문을 가로질러 종합한 통찰을 `notes/<slug>.md`에 누적 (승인 게이트). |
 | `tech-blog-digest` | "테크 블로그 요약", "blog digest" | Anthropic·OpenAI·Gemini·DeepMind 신규 포스트를 본문 기반 요약해 `tech-blog-digest/<date>.md`에 누적 (소스별 최대 5, 자동 이월). |
 | `research-autopilot` | "밤새 논문 쌓아줘", `/loop 10m /research-autopilot scope=graph-rag,finance-agents` | 무인 축적 루프의 한 반복 — 대기열 유도 → 논문 1편 ingest → 인용 분석 → hub 판정 → 깨진 링크 정정을 자동 승인으로 수행하고 `_meta/autopilot-log`에 기록. `scope`(hub slug)는 실행마다 필수 — 없으면 hub 목록과 함께 묻고 돌지 않으며, 전체는 `all`을 명시할 때만. 큐가 비면 scope 안 중심 논문의 인용 이웃으로 리필. 중요도 게이트(citation velocity ≥ 10 또는 vault 참조 2곳 이상, hub가 부르는 논문은 면제)로 낮은 중요도 후보는 보류. figure/table은 추출하지 않는다(텍스트 요약만, 아침에 on-demand). 한도로 끊긴 반복은 vault 상태에서 이어받는다. 정지 시 들어온 논문 요약·통찰 후보·아침 할 일을 담은 실행 보고서를 채팅과 `research-autopilot/<date>.md`에 남긴다. 통찰·lint 반영은 사람 몫. 본 세션은 디스패처(`SKILL.md`)만, 반복은 서브에이전트 워커가 `WORKER.md`를 읽어 새 컨텍스트에서. `/loop`이 사용자가 멈출 때까지 반복. |
-| `self-improve` | "회고 반영해줘", "self-improve" | 세션 회고·반복 실패를 분석해 `CLAUDE.md`/`docs/*` diff 제안 (승인 게이트, 메타 레이어). |
 
 ---
 
@@ -108,6 +107,10 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 재개   새 /loop. scope는 다시 준다 (max_papers·min_velocity는 남는다)
 보고   정지 시 자동 → 채팅 + research-autopilot/<날짜>.md. "autopilot 보고" → 정지 없이 현재 실행 보고서만 (저장 없음)
 탐색   제어 노트 explore: true → 실행 중 발견한 hub 후보도 의도 안이면 탐색 주제로 편입(실행당 max_topics, 기본 3). 기본 false
+       /loop 10m /research-autopilot τ-bench를 도전한 논문                         관계 의도 → anchor 탐색 주제: 벤치마크의 cited_by를 50편 회차로 문맥 판정, 워커가 유용도(상/중/하)로 골라 큐에. 논문 ID·이름·hub 이름 가능
+       velocity는 회차 순서일 뿐 컷이 아니다. 2회차 연속 유용한 게 없으면 소진. 하로 걸러진 논문은 anchor 노트 cited_by에 남고, 우선 큐로 옮기면 읽는다
+       후속만 위주로 보려면 anchor 의도를 단독 scope로 — hub와 섞으면 seed(P5)는 깨진 링크·다이제스트(P3·P4) 뒤. 실행 전 ## 우선 큐가 비었는지 확인. "후속 논문"은 도전(평가), "후속 벤치마크"는 비교
+       hub 이름을 anchor로 주면 정의에 맞는 벤치마크 논문만 velocity 순 max_topics(기본 3)까지 펼친다 — 더 보려면 제어 노트에서 올린다
 전제   세션 유지 (Mac 잠자기 방지 예: caffeinate -dimsu). 한 vault에 루프는 한 세션만
 ```
 

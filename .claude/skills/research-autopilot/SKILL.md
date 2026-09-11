@@ -1,12 +1,13 @@
 ---
 name: research-autopilot
-description: 무인 축적 루프의 한 반복(논문 1편)을 디스패처로 돈다 — 게이트 → 서브에이전트 워커(`WORKER.md`) → 보고 릴레이. `/loop 10m /research-autopilot scope=…`로 반복. scope는 실행마다 필수, 자연어 중 hub에 없는 주제는 탐색 주제로 등록해 arXiv seed. 정지 시 실행 보고서.
+description: 무인 축적 루프의 한 반복(논문 1편)을 디스패처로 돈다 — 게이트 → 서브에이전트 워커(`WORKER.md`) → 보고 릴레이. `/loop 10m /research-autopilot scope=…`로 반복. scope는 실행마다 필수, 자연어 중 hub에 없는 주제는 탐색 주제로 등록해 arXiv seed, "X를 도전한 논문" 같은 관계 의도는 anchor 탐색 주제로 X의 cited_by를 문맥 판정해 seed. 정지 시 실행 보고서.
 trigger:
   - "autopilot"
   - "밤새 논문 쌓아줘"
   - "무인 ingest 루프"
+  - "τ-bench를 도전한 논문 밤새 읽어줘"
 inputs:
-  - 'scope (필수) — 이번 실행의 hub. slug(`scope=graph-rag,finance-agents`) 또는 자연어. 자식 hub 자동 포함. hub에 없는 주제는 탐색 주제로 등록된다. 전체는 `all` 명시. 없으면 묻기만 하고 돌지 않는다'
+  - 'scope (필수) — 이번 실행의 hub. slug(`scope=graph-rag,finance-agents`) 또는 자연어. 자식 hub 자동 포함. hub에 없는 주제는 탐색 주제로, 관계 의도("hub X의 벤치마크를 도전한 논문")는 anchor 탐색 주제로 등록된다 — 후속만 위주로 보려면 이 의도를 **단독 scope**로, 전체는 `all` 명시. 없으면 사용자에게 스코프 명시 요구'
   - 'max_papers (선택, 기본 0=무제한) — 제어 노트에 저장, 정지해도 남는다'
 ---
 
@@ -45,20 +46,17 @@ D2 워커의 마지막 메시지를 그대로 릴레이
 **워커 프롬프트**:
 ```
 research-autopilot 스킬의 한 반복을 워커 모드로 수행하라.
-- 지침: 프로젝트의 `.claude/skills/research-autopilot/WORKER.md`(플러그인이면 그 스킬 폴더)를 Read로 읽고 따른다. Skill 도구로 research-autopilot을 부르지 않는다
+- 지침: 프로젝트의 `.claude/skills/research-autopilot/WORKER.md`(플러그인이면 그 스킬 폴더)를 Read로 읽고 "워커 계약"·Step 0~7·"Output format"(마지막 메시지, 15줄 이내)을 그대로 따른다. Skill 도구로 research-autopilot을 부르지 않는다
 - 인자: scope={인자 원문 | "(없음 — 제어 노트 값 사용)"} max_papers={값 | "(없음)"}
 - 상태: iter={N} · 직전 헤더="{D0가 읽은 마지막 헤더}" · processed={p}/{max_papers} · consecutive_failures={c}   ← 워커는 로그를 다시 읽지 않는다
-- 환경: vault={절대경로} · MCP 도구 접두사={예: mcp__research__} · 오늘={YYYY-MM-DD} · SS 캐시 1주
+- 환경: vault={절대경로} · MCP 도구 접두사={예: mcp__research__} · 오늘={YYYY-MM-DD}
 - 도구 로드: MCP 도구가 deferred면 첫 행동으로 ToolSearch 한 번에 전부 — `select:` 뒤에 접두사 붙인 전체 이름을 쉼표로: wiki_read_note, wiki_write_note, wiki_list_hubs, wiki_backlinks, wiki_search, wiki_link, search_papers, get_paper_by_id, read_paper, get_references_by_citations, get_citations_by_citations, get_citation_contexts, build_citation_graph
-- 계약: Step 0~7 전부. figure/table 추출 금지. 사용자 질문 금지(필요하면 scope_missing 로그 + ask=). 루프 제어 금지(정지 처리 ①②를 했으면 stop_reason). 로그는 헤더 tail -3만 읽고 >>로 append. read_paper는 max_pages=15
-- 마지막 메시지는 WORKER.md "Output format" 블록 + 다음 한 줄, 15줄 이내:
-  summary iter= action= id= slug= status= hubs= topic= new_hub= hub_candidate= links_fixed= held= processed= queue= frontier= interrupted= stop_reason= ask=
 ```
 
 **인라인 모드**: Agent 도구가 없으면(Claude Desktop 플러그인, web 에이전트) 같은 세션이 `WORKER.md`를 읽고 Step 0~7을 직접 수행. 컨텍스트 격리만 없다.
 
 ## scope (디스패처 몫)
-scope는 **hub slug 집합**(`wiki_list_hubs()`에 있는 것만, 자식 자동 포함)이며 **실행 단위** — 모든 정지에서 비워지고 다음 `/loop`에서 다시 받는다. 정지 기록 없이 끊긴 실행은 같은 실행이라 남는다. 해석·필터·탐색 주제는 `WORKER.md` "주제 scope"·"seed". 디스패처가 아는 것: 전체는 `all`로만(빈 값은 미입력) · hub에 안 닿는 주제는 묻지 않고 **탐색 주제**로 등록되며 첫 tick 보고의 `scope 확정:` echo로 확인한다(잘못 잡혔으면 제어 노트 `## 탐색 주제`에서 수정) · 첫 해석을 고정(`scope_input`이 같으면 재해석 안 함) · 설정만 하는 발화는 D0가 기록.
+scope는 **hub slug 집합**(`wiki_list_hubs()`에 있는 것만, 자식 자동 포함)이며 **실행 단위** — 모든 정지에서 비워지고 다음 `/loop`에서 다시 받는다. 정지 기록 없이 끊긴 실행은 같은 실행이라 남는다. 해석·필터·탐색 주제는 `WORKER.md` "주제 scope"·"seed". 디스패처가 아는 것: 전체는 `all`로만(빈 값은 미입력) · hub에 안 닿는 주제는 묻지 않고 **탐색 주제**로(관계 의도는 **anchor 탐색 주제**로 — anchor ID·relation이 줄에 박히고, 큐 진입은 velocity가 아니라 워커의 유용도 판정) 등록되며 첫 tick 보고의 `scope 확정:` echo로 확인한다(잘못 잡혔으면 제어 노트 `## 탐색 주제`에서 수정) · 첫 해석을 고정(`scope_input`이 같으면 재해석 안 함) · 설정만 하는 발화는 D0가 기록.
 
 **scope 요청 출력**:
 ```
@@ -74,7 +72,7 @@ scope는 **hub slug 집합**(`wiki_list_hubs()`에 있는 것만, 자식 자동 
 `reason` ∈ `user | max_papers | consecutive_failures | queue_exhausted | control_parse_error`. `scope_missing`은 정지가 아니라 **대기** — 로그 한 줄(첫 회)만, ②③④ 없음. cron을 살려두면 tick마다 이 파일이 다시 들어온다.
 
 ## 상태 파일 (`_meta/`)
-- `_meta/autopilot.md` 제어 — 사용자가 편집. frontmatter `stop`·`max_papers`·`min_velocity`·`scope`·`scope_input`·`run_started`·`processed`·`consecutive_failures`·`frontier_anchors`·`deleted_jobs`·`explore`·`max_topics`, 본문 `## 우선 큐`·`## 건너뜀`·`## 보류`·`## frontier`·`## 탐색 주제`. 템플릿은 `WORKER.md`.
+- `_meta/autopilot.md` 제어 — 사용자가 편집. frontmatter `stop`·`max_papers`·`min_velocity`·`scope`·`scope_input`·`run_started`·`processed`·`consecutive_failures`·`frontier_anchors`·`deleted_jobs`·`explore`·`max_topics`, 본문 `## 우선 큐`·`## 건너뜀`·`## 보류`·`## frontier`·`## 탐색 주제`(query 주제·anchor 주제). 템플릿은 `WORKER.md`.
 - `_meta/autopilot-log.md` 이력 — append-only. 한 반복 = `start` 헤더 + 결과 헤더 + `key=value` 3줄. 문법 `## [YYYY-MM-DD HH:MM] autopilot | iter=N | action=start|ingest|skip|refill|stop | …`. D0는 헤더 `tail -3`만, 전체는 보고서 때 1회.
 
 ## Failure handling (디스패처)
