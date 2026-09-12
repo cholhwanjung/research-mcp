@@ -62,12 +62,12 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 ```
 
 - **단방향 import** — 위 화살표 방향으로만 의존. 역방향 금지.
-- **tool은 한 곳에 정의** — `tools/*.py`의 함수를 MCP(`server.py`)와 에이전트(`agent/`)가 동일하게 재사용한다. 같은 20개 도구가 두 transport로 노출된다.
+- **tool은 한 곳에 정의** — `tools/*.py`의 함수를 MCP(`server.py`)와 에이전트(`agent/`)가 동일하게 재사용한다. 같은 24개 도구가 두 transport로 노출된다.
 - **에이전트** — Pydantic-AI. provider-prefixed 모델 문자열(`anthropic:` / `openai:` / `google:`)로 멀티 provider 전환. 스킬 정의를 system prompt로 로드.
 
 ---
 
-## MCP Tool 카탈로그 (20)
+## MCP Tool 카탈로그 (24)
 
 각 tool은 한 카테고리에만 속하도록 직교적으로 설계 — 호출 순서를 가진 워크플로우는 아래 *스킬* 로 묶인다.
 
@@ -77,7 +77,8 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | **graph** | `get_references_by_citations`, `get_citations_by_citations` |
 | **artifact** | `download_paper`, `read_paper`, `extract_paper_figures`, `extract_paper_tables`, `prune_paper_figures`, `prune_paper_tables`, `render_paper_page` |
 | **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_search`, `wiki_backlinks`, `wiki_link` |
-| **viz** | `build_citation_graph` |
+| **viz** | `build_citation_graph`, `export_citation_network` |
+| **blog** | `get_tech_blog_posts`, `read_blog_post`, `mark_blog_posts_seen` |
 
 ---
 
@@ -129,7 +130,7 @@ uv sync
 
 ```
 /plugin marketplace add cholhwanjung/research-mcp
-/plugin install research-mcp@research-mcp
+/plugin install research-mcp@research-mcp-local
 ```
 
 활성화(enable) 시 아래를 프롬프트로 입력한다. **secret은 repo가 아니라 keychain에 저장된다.**

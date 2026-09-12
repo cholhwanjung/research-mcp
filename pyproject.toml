@@ -1,7 +1,7 @@
 [project]
 name = "research-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "arXiv·Semantic Scholar 논문 리서치 MCP 서버 + Obsidian vault 축적형 연구 에이전트"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
