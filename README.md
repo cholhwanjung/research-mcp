@@ -174,6 +174,23 @@ uv sync
 
 ---
 
+## 독립 autopilot 런타임 (실험)
+
+Claude Code(`/loop`·서브에이전트) 없이 같은 vault·같은 제어 노트로 autopilot을 돌린다. 규칙(게이트·대기열·로그·제어 노트)은 코드가, 논문 요약은 provider 무관 에이전트가 맡는다.
+
+```bash
+uv run python -m agent.autopilot --scope autonomous-research-agents --max-papers 5 --model openai:gpt-4o
+```
+
+- `--scope` — hub·탐색 주제 slug(쉼표) 또는 `all`. 자연어는 받지 않는다(종료 코드 2).
+- `--once` — 한 반복만. `--interval` — 반복 사이 대기 초(기본 60). `--model` — 없으면 `RESEARCH_MODEL`.
+- 에이전트는 파일을 쓰지 않는다 — 노트 형식·hub 검증·내부 식별자 차단은 코드가 한다.
+- 논문 본문은 신뢰 경계 표지로 감싸 본문 속 지시를 따르지 않는다.
+- 노트 수치를 원문과 대조해 로그에 `unverified_numbers=`로 남긴다.
+- 아직 하지 않는 것 — 인용 분석·seed·리필·hub 승격. 이 런타임이 넣은 논문은 스킬 모드 autopilot의 백필이 인용 지도를 채운다.
+
+---
+
 ## 웹 앱 (self-hosted) — 멀티 LLM 채팅
 
 Claude Desktop 외에, 같은 도구·워크플로우를 **웹 채팅 UI**로도 쓸 수 있음.
