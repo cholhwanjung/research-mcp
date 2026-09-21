@@ -15,6 +15,8 @@ services:
       OBSIDIAN_VAULT_PATH: /vault
       # 세션 SQLite는 named volume(Linux VM fs)에 — bind-mount 위 SQLite 락 문제 회피.
       RESEARCH_SESSIONS_DB: /data/sessions.db
+      # 스냅샷·감사 로그도 vault 밖 named volume에 (에이전트 도구가 건드리지 못하게).
+      RESEARCH_AGENT_STATE_DIR: /data/agent
     volumes:
       - "${VAULT_HOST_PATH:?set VAULT_HOST_PATH in .env (your Obsidian vault absolute path)}:/vault"
       - sessions:/data

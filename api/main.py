@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import chat, skills
+from api.routes import chat, skills, snapshots
 
 
 def resolve_sessions_db() -> Path:
@@ -56,6 +56,7 @@ def create_app(agent=None, session_store=None) -> FastAPI:
 
     app.include_router(chat.router)
     app.include_router(skills.router)
+    app.include_router(snapshots.router)
 
     @app.get("/health")
     def health():
