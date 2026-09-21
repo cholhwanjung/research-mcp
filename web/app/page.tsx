@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ChatStream } from "@/components/ChatStream";
+import { ModePicker } from "@/components/ModePicker";
 import { ModelPicker } from "@/components/ModelPicker";
 import { TokenInput } from "@/components/TokenInput";
-import { MODELS } from "@/lib/api";
+import { MODELS, MODES, type Mode } from "@/lib/api";
 import { useChat } from "@/lib/useChat";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -13,16 +14,20 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 export default function Home() {
   const [model, setModel] = useState(MODELS[0].value);
   const [token, setToken] = useState("");
+  const [mode, setMode] = useState<Mode>("ask");
   const [input, setInput] = useState("");
-  const { messages, streaming, send } = useChat({
+  const { messages, streaming, awaitingApproval, send, respond, undo } = useChat({
     apiUrl: API_URL,
     token: token || undefined,
     model,
+    mode,
   });
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setToken(localStorage.getItem("research_api_token") ?? "");
+    const saved = localStorage.getItem("research_agent_mode");
+    if (MODES.some((m) => m.value === saved)) setMode(saved as Mode);
   }, []);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,6 +36,10 @@ export default function Home() {
   const onToken = (v: string) => {
     setToken(v);
     localStorage.setItem("research_api_token", v);
+  };
+  const onMode = (v: Mode) => {
+    setMode(v);
+    localStorage.setItem("research_agent_mode", v);
   };
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +53,7 @@ export default function Home() {
       <header className="flex items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h1 className="font-semibold">Research Agent</h1>
         <div className="flex items-center gap-2">
+          <ModePicker value={mode} onChange={onMode} />
           <ModelPicker value={model} onChange={setModel} />
           <TokenInput value={token} onChange={onToken} />
         </div>
@@ -57,7 +67,7 @@ export default function Home() {
             노트·그래프는 Obsidian에서 확인합니다.
           </p>
         ) : (
-          <ChatStream messages={messages} streaming={streaming} />
+          <ChatStream messages={messages} streaming={streaming} onRespond={respond} onUndo={undo} />
         )}
         <div ref={bottomRef} />
       </main>
@@ -69,13 +79,13 @@ export default function Home() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          disabled={streaming}
-          placeholder="메시지를 입력하세요…"
+          disabled={streaming || awaitingApproval}
+          placeholder={awaitingApproval ? "위 승인 요청에 먼저 답해 주세요" : "메시지를 입력하세요…"}
           className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
         />
         <button
           type="submit"
-          disabled={streaming || !input.trim()}
+          disabled={streaming || awaitingApproval || !input.trim()}
           className="rounded-md bg-zinc-900 px-4 py-2 text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-black"
         >
           {streaming ? "…" : "전송"}

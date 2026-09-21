@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { streamChat } from "./api";
+import { restoreSnapshot, streamChat } from "./api";
 import type { ChatEvent } from "./sse";
 
 function streamFrom(chunks: string[]): ReadableStream<Uint8Array> {
@@ -50,6 +50,22 @@ describe("streamChat", () => {
     expect(fetchMock.mock.calls[0][1].headers.authorization).toBeUndefined();
   });
 
+  it("sends the permission mode and approval decisions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, body: streamFrom([]) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const approvals = { w1: { approved: true, remember: true } };
+    for await (const _ of streamChat("", { apiUrl: "http://x", sessionId: "s1", mode: "accept_edits", approvals })) {
+      /* drain */
+    }
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      message: "",
+      session_id: "s1",
+      mode: "accept_edits",
+      approvals,
+    });
+  });
+
   it("throws on non-ok response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, body: null }));
     await expect(async () => {
@@ -57,5 +73,23 @@ describe("streamChat", () => {
         /* drain */
       }
     }).rejects.toThrow(/401/);
+  });
+});
+
+describe("restoreSnapshot", () => {
+  it("posts to the restore route with the token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ path: "notes/a.md" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(restoreSnapshot("sid-1", { apiUrl: "http://x", token: "t" })).resolves.toEqual({ path: "notes/a.md" });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("http://x/snapshots/sid-1/restore");
+    expect(init.method).toBe("POST");
+    expect(init.headers.authorization).toBe("Bearer t");
+  });
+
+  it("throws when the server refuses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    await expect(restoreSnapshot("sid-1", { apiUrl: "http://x" })).rejects.toThrow(/403/);
   });
 });

@@ -64,6 +64,57 @@ describe("toChatEvent", () => {
     });
   });
 
+  it("keeps the tool call id", () => {
+    expect(toChatEvent({ event: "tool_call", data: '{"tool":"read_file","args":{},"id":"r1"}' })).toEqual({
+      type: "tool_call",
+      tool: "read_file",
+      args: {},
+      id: "r1",
+    });
+  });
+
+  it("maps tool_result with its snapshot id", () => {
+    const data = JSON.stringify({
+      tool: "write_file",
+      id: "w1",
+      content: "💾 저장",
+      metadata: { snapshot: "20260912T101010-abcdef", path: "notes/a.md" },
+    });
+    expect(toChatEvent({ event: "tool_result", data })).toEqual({
+      type: "tool_result",
+      tool: "write_file",
+      id: "w1",
+      content: "💾 저장",
+      snapshot: "20260912T101010-abcdef",
+    });
+  });
+
+  it("flattens approval_required requests", () => {
+    const data = JSON.stringify({
+      requests: [
+        {
+          id: "w1",
+          tool: "write_file",
+          args: { path: "notes/a.md" },
+          metadata: { reason: "vault 파일을 바꾼다", preview: "+new", rememberable: true },
+        },
+      ],
+    });
+    expect(toChatEvent({ event: "approval_required", data })).toEqual({
+      type: "approval_required",
+      requests: [
+        {
+          id: "w1",
+          tool: "write_file",
+          args: { path: "notes/a.md" },
+          reason: "vault 파일을 바꾼다",
+          preview: "+new",
+          rememberable: true,
+        },
+      ],
+    });
+  });
+
   it("returns null for unknown event and bad JSON", () => {
     expect(toChatEvent({ event: "weird", data: "{}" })).toBeNull();
     expect(toChatEvent({ event: "text", data: "not json" })).toBeNull();
