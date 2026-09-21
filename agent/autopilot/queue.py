@@ -29,6 +29,8 @@ class Candidate:
     via: str | None = None
     usefulness: str | None = None
     line: str = ""
+    refs: int = 0  # 이 후보를 부르는 vault 노트 수(깨진 링크·hub 평문) — 같은 등급 정렬과 중요도 게이트
+    mode: str = "ingest"  # "citations"면 노트는 있고 인용 지도만 없다 — 인용 분석만 한다
 
 
 def priority_candidates(note: ControlNote) -> list[Candidate]:
@@ -107,7 +109,7 @@ def backfill_candidates(papers: list[dict], scope: list[str], hubs: list[dict]) 
     allowed = set() if everything else expand_scope(scope, hubs)
     out: list[Candidate] = []
     for paper in papers:
-        if paper.get("references") or paper.get("cited_by"):
+        if "references" in paper or "cited_by" in paper:  # 0건으로 끝난 분석도 분석한 것
             continue
         if not everything and not (_topic_slugs(paper) & allowed):
             continue

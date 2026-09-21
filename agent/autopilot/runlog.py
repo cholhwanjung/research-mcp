@@ -22,23 +22,55 @@ class Header:
     fields: dict[str, str] = field(default_factory=dict)
 
 
+_KV = re.compile(r'([A-Za-z_]\w*)=("[^"]*"|\S+)')
+
+
+@dataclass
+class Entry:
+    """헤더 한 줄과 뒤따르는 `key=value` 줄들."""
+
+    header: Header
+    kv: dict[str, str] = field(default_factory=dict)
+
+
+def _parse_header(line: str) -> Header | None:
+    m = _HEADER.match(line)
+    if not m:
+        return None
+    kv: dict[str, str] = {}
+    for part in m.group("rest").split(" | "):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            kv[k.strip()] = v.strip()
+    try:
+        it = int(kv.pop("iter"))
+    except (KeyError, ValueError):
+        return None
+    return Header(m.group("ts"), it, kv.pop("action", ""), kv)
+
+
 def parse_headers(text: str) -> list[Header]:
-    headers: list[Header] = []
+    return [h for h in (_parse_header(line) for line in text.splitlines()) if h is not None]
+
+
+def parse_kv(line: str) -> dict[str, str]:
+    """`format_kv` 한 줄을 되읽는다. 큰따옴표 값은 따옴표를 벗긴다."""
+    out: dict[str, str] = {}
+    for m in _KV.finditer(line):
+        value = m.group(2)
+        out[m.group(1)] = value[1:-1] if len(value) >= 2 and value[0] == value[-1] == '"' else value
+    return out
+
+
+def parse_entries(text: str) -> list[Entry]:
+    entries: list[Entry] = []
     for line in text.splitlines():
-        m = _HEADER.match(line)
-        if not m:
-            continue
-        kv: dict[str, str] = {}
-        for part in m.group("rest").split(" | "):
-            if "=" in part:
-                k, v = part.split("=", 1)
-                kv[k.strip()] = v.strip()
-        try:
-            it = int(kv.pop("iter"))
-        except (KeyError, ValueError):
-            continue
-        headers.append(Header(m.group("ts"), it, kv.pop("action", ""), kv))
-    return headers
+        header = _parse_header(line)
+        if header is not None:
+            entries.append(Entry(header))
+        elif entries and line.strip() and not line.startswith("#"):
+            entries[-1].kv.update(parse_kv(line))
+    return entries
 
 
 def open_start(headers: list[Header]) -> Header | None:

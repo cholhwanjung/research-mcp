@@ -1,11 +1,14 @@
 """research-autopilot 제어 노트(`_meta/autopilot.md`)를 코드로 읽고 쓴다.
 
 본문은 `## 절` 단위로 나누고 절 안의 `- ` 줄만 항목으로 본다. 설명 줄·빈 줄은
-원문 그대로 되돌려 사용자가 Obsidian에서 편집한 내용을 보존한다.
+원문 그대로 되돌려 사용자가 Obsidian에서 편집한 내용을 보존한다. 저장할 때는
+`merge_changes`로 디스크 최신본에 이번 반복이 바꾼 것만 얹는다 — 반복 도중 사용자가 적은
+정지 요청·항목을 덮어쓰지 않는다.
 """
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, field
 
@@ -24,6 +27,7 @@ _RUN_RESET = {
     "run_started": "",
     "processed": 0,
     "consecutive_failures": 0,
+    "topics_added": 0,
 }
 
 
@@ -82,6 +86,27 @@ class ControlNote:
                 return True
         return False
 
+    def replace_item(self, name: str, old: str, new: str) -> bool:
+        """본문이 old와 같은 항목 줄을 제자리에서 new로 바꾼다."""
+        section = self._section(name)
+        if section is None:
+            return False
+        for i, line in enumerate(section.lines):
+            if line.startswith("- ") and line[2:].strip() == old.strip():
+                section.lines[i] = f"- {new}"
+                return True
+        return False
+
+    def remove_exact(self, name: str, text: str) -> bool:
+        section = self._section(name)
+        if section is None:
+            return False
+        for i, line in enumerate(section.lines):
+            if line.startswith("- ") and line[2:].strip() == text.strip():
+                del section.lines[i]
+                return True
+        return False
+
     def add_item(self, name: str, text: str) -> None:
         """마지막 항목 뒤(항목이 없으면 설명 줄 뒤)에 붙인다. 절이 없으면 끝에 만든다."""
         section = self._section(name)
@@ -134,3 +159,49 @@ def render_control(note: ControlNote) -> str:
         body.extend(section.lines)
     yaml_block = yaml.safe_dump(note.frontmatter, allow_unicode=True, sort_keys=False)
     return "---\n" + yaml_block + "---\n" + "\n".join(body)
+
+
+@dataclass
+class ControlSnapshot:
+    frontmatter: dict
+    items: dict[str, list[str]]
+
+
+def snapshot(note: ControlNote) -> ControlSnapshot:
+    return ControlSnapshot(copy.deepcopy(note.frontmatter), {s.name: note.items(s.name) for s in note.sections})
+
+
+def _minus(items: list[str], other: list[str]) -> list[str]:
+    pool = list(other)
+    out: list[str] = []
+    for item in items:
+        if item in pool:
+            pool.remove(item)
+        else:
+            out.append(item)
+    return out
+
+
+def merge_changes(fresh: ControlNote, before: ControlSnapshot, after: ControlNote) -> ControlNote:
+    """before → after 사이의 변경만 fresh(디스크 최신본)에 얹어 돌려준다.
+
+    frontmatter는 값이 바뀐 키만, 절은 지운 줄·더한 줄만 반영한다. 같은 식별 부분의 줄을 지우고
+    더했으면 제자리 교체로 보고, 그 사이 사용자가 원래 줄을 지웠으면 되살리지 않는다.
+    """
+    for key, value in after.frontmatter.items():
+        if key not in before.frontmatter or before.frontmatter[key] != value:
+            fresh.frontmatter[key] = copy.deepcopy(value)
+    for name in after.section_names():
+        old_items = before.items.get(name, [])
+        new_items = after.items(name)
+        added = _minus(new_items, old_items)
+        for removed in _minus(old_items, new_items):
+            match = next((a for a in added if item_key(a) == item_key(removed)), None)
+            if match is None:
+                fresh.remove_exact(name, removed)
+                continue
+            added.remove(match)
+            fresh.replace_item(name, removed, match)
+        for item in added:
+            fresh.add_item(name, item)
+    return fresh

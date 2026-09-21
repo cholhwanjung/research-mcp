@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from agent.autopilot.control import ControlNote
-from agent.autopilot.runlog import Header, next_iter, open_start
+from agent.autopilot.runlog import Header, last_iter, next_iter, open_start
 
 Action = Literal["run", "resume", "stop", "idle", "wait_scope"]
 _FAILURE_LIMIT = 3
@@ -60,6 +60,11 @@ def decide(
     scope_arg = (scope_arg or "").strip() or None
 
     opened = open_start(headers)
+    # 실행 중(scope가 남아 있음)인데 stop: true — 사용자가 제어 노트나 stop 명령으로 정지를 요청했다.
+    # 정지 처리는 scope를 비우므로 정지 상태의 stop: true와 구분된다.
+    if fm.get("stop") is True and saved_scope:
+        return Decision("stop", reason="user", iter=opened.iter if opened else last_iter(headers),
+                        consecutive_failures=failures, max_papers=max_papers)
     if opened is not None:
         failures += 1
         if failures >= _FAILURE_LIMIT:
