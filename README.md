@@ -174,20 +174,35 @@ uv sync
 
 ---
 
-## 독립 autopilot 런타임 (실험)
+## 독립 autopilot 런타임
 
-Claude Code(`/loop`·서브에이전트) 없이 같은 vault·같은 제어 노트로 autopilot을 돌린다. 규칙(게이트·대기열·로그·제어 노트)은 코드가, 논문 요약은 provider 무관 에이전트가 맡는다.
+Claude Code(`/loop`·서브에이전트) 없이 같은 vault·같은 제어 노트·같은 로그로 autopilot을 돈다. 스킬 모드가 하는 일을 모두 한다 — 게이트·대기열(우선 큐·깨진 링크·hub 평문 이름·탐색 주제 seed·백필·frontier)·scope/중요도 게이트·ingest·인용 분석·탐색 주제 소속과 hub 승격·신규 hub·anchor 관계 확정·링크 정정·리필·정지 처리·실행 보고서. 결정론으로 끝나는 일은 코드가, 판단은 provider 무관 에이전트가 맡는다.
 
 ```bash
-uv run python -m agent.autopilot --scope autonomous-research-agents --max-papers 5 --model openai:gpt-4o
+uv run python -m agent.autopilot --scope autonomous-research-agents --max-papers 5 --model openai:gpt-5
+uv run python -m agent.autopilot --scope "The AI Scientist를 도전한 논문" --model openai:gpt-5
+uv run python -m agent.autopilot stop
+uv run python -m agent.autopilot report
+uv run python -m agent.autopilot config --scope "graph rag" --max-papers 10
 ```
 
-- `--scope` — hub·탐색 주제 slug(쉼표) 또는 `all`. 자연어는 받지 않는다(종료 코드 2).
-- `--once` — 한 반복만. `--interval` — 반복 사이 대기 초(기본 60). `--model` — 없으면 `RESEARCH_MODEL`.
-- 에이전트는 파일을 쓰지 않는다 — 노트 형식·hub 검증·내부 식별자 차단은 코드가 한다.
-- 논문 본문은 신뢰 경계 표지로 감싸 본문 속 지시를 따르지 않는다.
-- 노트 수치를 원문과 대조해 로그에 `unverified_numbers=`로 남긴다.
-- 아직 하지 않는 것 — 인용 분석·seed·리필·hub 승격. 이 런타임이 넣은 논문은 스킬 모드 autopilot의 백필이 인용 지도를 채운다.
+| 명령 | 하는 일 |
+|---|---|
+| `run` (기본) | 반복을 돈다. 정지하면 `research-autopilot/<날짜>.md`에 실행 보고서 |
+| `stop` | 사용자 정지. 루프가 돌고 있으면 정지 요청만 기록하고, 그 루프가 이번 반복을 마친 뒤 정지·보고 |
+| `report` | 진행 중이면 현재 실행, 아니면 마지막 실행의 보고서를 출력 (저장 없음) |
+| `config` | scope·max_papers만 기록 (반복을 시작하지 않음) |
+
+- `--scope` — hub·탐색 주제 slug(쉼표), `all`, 또는 자연어. 자연어는 첫 반복에 hub·탐색 주제(검색어 주제, "X를 도전한 논문" 같은 anchor 주제)로 옮겨 등록하고 `scope 확정:`으로 알린다. 같은 원문이면 다시 해석하지 않는다.
+- `--once` 한 반복만 · `--interval` 반복 사이 대기 초(기본 60) · `--max-papers` · `--model` provider:model(없으면 `RESEARCH_MODEL`).
+- 정지 — 실행 중 제어 노트에 `stop: true`, `stop` 명령, Ctrl+C 모두 사용자 정지(`reason=user`)로 열린 반복을 닫는다.
+- 한 vault에 루프 하나(`_meta/autopilot.lock`). 제어 노트는 반복 중 사용자가 고친 내용 위에 변경분만 얹어 저장한다.
+- 에이전트는 파일을 쓰지 않는다 — 노트 형식·hub 검증·내부 식별자 차단·링크 치환은 코드가 한다.
+- 외부 문서(본문·초록·인용 문맥·검색 결과)는 신뢰 경계 표지로 감싸 본문 속 지시를 따르지 않는다. 노트 수치는 원문과 대조해 `unverified_numbers=`로 남긴다.
+- 로그 결과 줄에 `runtime=standalone`·`tokens`·`requests`. 스킬 모드와 번갈아 돌릴 수 있다(동시에는 하나).
+- 요약은 논문 본문과 함께 vault 노트를 찾아 읽고(`wiki_search`·`wiki_read_note`), 항목을 '굵은 머리 — 설명' 문단으로 쓴다. 본문 링크는 실재하는 노트만 남는다. References 절은 방향별 종합 문단 + 관계 접두사별 목록.
+- 스킬 모드와 다른 점 — hub 본문이 평문으로 부른 논문은 scope 게이트 면제, 반복당 scope 밖 3건·후보 20건 상한.
+- 모델 호출 비용·API 키는 사용자 몫이다.
 
 ---
 
@@ -196,9 +211,17 @@ uv run python -m agent.autopilot --scope autonomous-research-agents --max-papers
 Claude Desktop 외에, 같은 도구·워크플로우를 **웹 채팅 UI**로도 쓸 수 있음.
 
 ### 구성
-- `api/` — FastAPI + SSE 백엔드. `/chat`(스트리밍) · `/skills` · `/health`. Bearer 토큰 인증(옵션).
-- `agent/` — Pydantic-AI 에이전트. MCP의 tool 재사용 + multi-provider.
-- `web/` — Next.js 채팅 프론트 (스트리밍 + 모델 선택기 + 토큰 입력).
+- `api/` — FastAPI + SSE 백엔드. `/chat`(스트리밍·승인 재개) · `/snapshots/{id}/restore` · `/skills` · `/health`. Bearer 토큰 인증.
+- `agent/` — Pydantic-AI 하네스(provider 무관). MCP의 tool 재사용 + vault 작업 공간(읽기·쓰기·편집·찾기·검색) + 스킬 점진 로딩 + 읽기 전용 위임 + autopilot 작업 도구.
+- `web/` — Next.js 채팅 프론트 (스트리밍 + 승인 카드·되돌리기 + 권한 모드·모델 선택 + 토큰 입력).
+
+### 권한 — 승인·모드·되돌리기
+- 파일 경로는 vault 안만 받는다(`..`·절대경로·심볼릭 링크 탈출 거부, `.obsidian/`·`.git/` 쓰기 거부). 셸·코드 실행 도구는 없다.
+- 모드(우상단): **확인 후 편집**(기본 — vault 쓰기·설정 변경·삭제·비용 작업 전에 승인 카드) · **편집 자동 허용**(vault 편집은 바로, 삭제·비용 작업은 승인) · **읽기 전용**.
+- 승인 카드에 diff·삭제 대상·비용 안내가 보인다. **허용** / **이 세션 동안 허용**(편집 도구만) / **거부**.
+- 에이전트가 쓴 파일은 도구 카드의 **되돌리기**로 쓰기 전 내용으로 돌린다. 스냅샷·감사 로그(`key=value`)는 vault 밖 `RESEARCH_AGENT_STATE_DIR`(기본 `.cache/agent`)에 쌓인다.
+- `RESEARCH_API_TOKEN`이 없으면 서버가 읽기 전용으로 고정된다 — 쓰기·autopilot 시작은 토큰을 설정한 뒤에.
+- 채팅의 "autopilot 시작·멈춰·보고·오늘은 X로"는 autopilot 작업 도구(독립 런타임 루프, 시작·설정은 승인)로 간다.
 
 ### 실행 — 한 번에 (로컬, 추천)
 ```bash
@@ -214,7 +237,7 @@ cp .env.example .env       # 쓸 provider 키만 채우기 (예: GOOGLE_API_KEY)
 - Ctrl-C 한 번으로 둘 다 종료. 최초 1회 `uv sync`·`npm install` 자동, Docker 불필요.
 - `.env`는 백엔드(`core/config.py`)가 자동 로드, 프론트 기본 API_URL은 `http://localhost:8000`.
 
-**사용**: 우상단 토큰칸에 `RESEARCH_API_TOKEN` 값 입력(설정 시) → 채팅. 예: `"BLIP-2 위키에 추가해줘"` → 채팅에 tool 실행 흐름 표시 → **Obsidian을 열어** 노트·그래프 확인.
+**사용**: 우상단 토큰칸에 `RESEARCH_API_TOKEN` 값 입력 → 채팅 (토큰 없이 띄운 서버는 읽기 전용). 예: `"BLIP-2 위키에 추가해줘"` → 채팅에 tool 실행 흐름 표시 → **Obsidian을 열어** 노트·그래프 확인.
 
 ### 실행 — Docker (self-hosted 배포)
 ```bash
@@ -236,11 +259,59 @@ cd web && npm run dev                                       # 프론트(:3000)
 ### 환경 변수 (웹 앱)
 | 변수 | 설명 |
 |---|---|
-| `RESEARCH_API_TOKEN` | 설정 시 API 호출에 `Authorization: Bearer` 강제 (비우면 인증 off) |
+| `RESEARCH_API_TOKEN` | 설정 시 API 호출에 `Authorization: Bearer` 강제. 비우면 인증 off + 읽기 전용(쓰기·autopilot 시작 도구 숨김) |
+| `RESEARCH_AGENT_STATE_DIR` | 스냅샷·감사 로그 폴더 (기본 `.cache/agent`, compose는 `/data/agent`) |
 | `RESEARCH_MODEL` | 기본 채팅 모델 (`anthropic:…` / `openai:…` / `google:…`) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | 사용할 provider 키 |
 | `GOOGLE_API_KEY` | Gemini Vision — figure/table 추출 (ingest 시) |
 | `VAULT_HOST_PATH` | (compose) host vault 절대경로 → 컨테이너 `/vault` |
+
+### 평가 — 의도 이해·노트 품질·교차 시스템 비교
+
+**평가 대상 — pydantic-ai 에이전트 두 층**
+
+| 층 | 구성 | LLM이 맡는 것 | 코드가 맡는 것 |
+|---|---|---|---|
+| 채팅 하네스 (`agent/runtime.py`) | `Agent` 하나. provider 접두사 모델 문자열, 지침 = 하네스 규칙 + 스킬 목록(본문은 도구로 로드), toolset = 연구 도구(외부 문서 출력은 `<untrusted_document>`로 감쌈) + vault 작업 공간 + 스킬 로드 + autopilot 작업 + 읽기 전용 위임, 전체를 `PolicyToolset`이 감쌈. 출력은 `str \| DeferredToolRequests` | 도구 선택·응답 | 권한 판정(allow·ask·deny)과 승인 멈춤·재개, 쓰기 전 스냅샷·감사 로그, 이벤트 스트림(tool_call·tool_result·text·approval_required·done) |
+| autopilot 런타임 (`agent/autopilot/runner.py`) | 반복 1회 = 논문 1편을 코드가 순서대로 조율. LLM은 구조화 출력 에이전트만(reader → `NoteDraft`, scope 판정, 인용 판정, References 종합, hub 큐레이터, 제목 판정, 이름 추출, 제목 매칭, scope 해석, 보고서 종합) | 요약·판정·종합 | 제어 노트·게이트·큐·스크리닝·노트 렌더·수치 대조·쓰기·인용 병합·로그. 호출마다 `UsageLimits`, 외부 문서는 신뢰 경계 표지, 의존성 주입으로 가짜 모델 테스트 |
+
+**방법론**
+- 두 층을 따로 잰다 — 대화형은 "의도 → 도구 궤적", 노트는 "산출물의 원문 충실성과 쓸모". 실패 양상이 다르다.
+- 대화형 사례 = 발화 + 기대 조건(`tools_all/any/none`·`approval_for`·`asks_user`·`final_matches/excludes`·`unchanged`·`outside_unchanged`). 사례마다 vault 복사본에 전용 파일(주입 노트·오타 파일)을 심고 전후 해시로 불변을 본다. 승인 요청은 항상 거부하고 같은 이력으로 계속 → 쓰기 의도는 승인 요청으로 잡히고 부작용은 0.
+- 세 축 — A 스킬 모드(헤드리스 Claude Code + 같은 스킬·같은 MCP 서버, Opus 5), B 독립 하네스 + Opus 5, C 독립 하네스 + gpt-5. A−B가 하네스 효과, B−C가 모델 효과. 두 시스템의 도구 호출은 능력 어휘(vault 읽기·쓰기·삭제, autopilot 시작·설정·정지·상태)로 정규화해 같은 규칙으로 채점(`agent/evals/capabilities.py`).
+- 개발 12사례로 규칙을 다듬고, held-out 12사례는 sha256으로 고정해 결론에는 held-out만 쓴다. 결과를 본 뒤 규칙을 고치지 않는다.
+- 지표 — pass@1(사례 단위 부트스트랩 95% 구간)·pass^k(k회 전부 통과한 사례 비율)·체크 통과율·안전 시도(금지 도구 호출)·침해(불변 파일 변경)·토큰 종류별 사용량·공개 단가 비용·소요.
+- 노트 — 스킬 모드는 워커 트랜스크립트의 저장 당시 원문·사용량(재실행 없음), 독립 런타임은 그 논문 ingest 직전으로 되돌린 복사본에서 한 반복. 결정론 지표(분석 절 수치 ↔ 원문 40쪽 텍스트, 끊긴 링크, vault 논문 링크) + 제3 제공자 모델(gemini-2.5-pro)의 블라인드 쌍대 판정(순서 교차, 두 답이 같을 때만 승) + 주장 감사.
+- 지표 검증 — 잡힌 수치·주장은 사람이 원문에서 확인한다. 2026-09-14 확인: "원문에 없는 수치" 9건 전부 반올림·표기 차이(환각 0) → 이 지표는 값이 아니라 표기를 비교한다는 한계가 있다(값 비교로 수정 예정).
+
+**실측 (held-out, 2026-09-12 · 09-14)**
+
+| 축 | 5사례 × 1회 | 12사례 × 5회 | 사례당 비용 |
+|---|---|---|---|
+| A 스킬 모드 · Opus 5 | 5/5 | — | $0.51 |
+| B 독립 · Opus 5 | 5/5 | — | $0.40 (프롬프트 캐시 없음) |
+| C 독립 · gpt-5 | 3/5 | pass@1 0.78 (0.60~0.93) · pass^5 0.58 · 안전 시도 0 · 침해 0 | $0.05 |
+
+노트 5편(스킬 모드 대 gpt-5 독립): 판정 종합 스킬 3 · gpt-5 1 · 불일치 1, 원문 충실성 4편 동률. 편당 비용 스킬 $2.32~4.24(트랜스크립트 환산) · gpt-5 $0.66~0.84. gpt-5 반복 실행의 실패는 세 패턴 — 텍스트로 저장 허락 구하기, 같은 이름 노트 둘 중 되묻기, 제어 노트를 끝까지 읽지 않기.
+
+```bash
+uv run python -m agent.evals intents --model openai:gpt-5 --workdir /tmp/intent-evals
+uv run python -m agent.evals notes --arxiv 2411.00816 --reference cycleresearcher --model openai:gpt-5 --workdir /tmp/note-eval
+# 교차 비교 — 같은 사례·같은 채점 규칙으로 스킬 모드(Claude Code)와 독립 하네스
+uv run python -m agent.evals intents --cross --split holdout --repeat 3 --model openai:gpt-5 --arm C --workdir /tmp/x/C
+uv run python -m agent.evals intents --system claude-code --split holdout --model claude-opus-5 --arm A --budget-usd 3 --workdir /tmp/x/A
+uv run python -m agent.evals summary /tmp/x/A/results.jsonl /tmp/x/C/results.jsonl
+uv run python -m agent.evals notes-cross --papers kosmos,paperqa2 --models openai:gpt-5 --workdir /tmp/x/notes
+uv run python -m agent.evals judge --papers kosmos,paperqa2 --arms skill,openai_gpt-5 --workdir /tmp/x/notes
+```
+- `intents` — 실제 발화 사례(`agent/evals/intent_cases.json`)를 넣고 부른 도구·승인 요청·확인 질문·최종 응답을 채점한다. 승인 요청에서 멈춘다(쓰기 전에 묻는지 본다).
+- `--cross` — 승인 요청을 거부로 답하고 계속하며(헤드리스 Claude Code `dontAsk`와 같은 조건), 두 시스템의 도구 호출을 능력 단위(vault 읽기·쓰기·삭제, autopilot 시작·설정·정지·보고 등)로 맞춰 채점한다. `--split holdout`은 튜닝에 쓰지 않은 사례(`intent_cases_holdout.json`), `--repeat`는 사례당 반복 수.
+- `--system claude-code` — 저장소 스킬 사본을 플러그인으로, vault 복사본을 작업 폴더로 `claude -p`를 돌린다. 읽기 도구만 허용하고 나머지는 거부, `ANTHROPIC_API_KEY` 필요, 실행마다 `--budget-usd` 상한.
+- `summary` — 팔·분할별 pass@1(사례 단위 부트스트랩 95% 구간)·pass^k·안전 시도·안전 침해·토큰·비용.
+- `notes-cross` — 스킬 모드 노트는 autopilot 워커 트랜스크립트의 저장 당시 원문·사용량으로, 독립 런타임 노트는 그 논문 ingest 직전으로 되돌린 복사본에서 한 반복으로 만들어 원문에 없는 수치·끊긴 링크·vault 논문 링크를 잰다.
+- `judge` — 판정 모델(기본 `google:gemini-2.5-pro`)이 노트 쌍을 순서를 바꿔 두 번 비교하고(두 답이 같을 때만 승), 노트마다 원문으로 뒷받침되지 않는 주장을 모은다.
+- `notes` — 같은 논문의 기준 노트(스킬 모드)와 독립 런타임 노트를 분석 절 분량·링크한 vault 논문·굵은 머리 항목으로 나란히 본다.
+- 원본 vault는 읽기만 한다 — 사례마다 PDF 캐시를 뺀 복사본에서 돈다. 결과는 `key=value` 줄과 `results.jsonl`. 모델 호출 비용은 사용자 몫.
 
 ---
 
