@@ -13,7 +13,7 @@ import re
 from analysis import network as _network
 from analysis.viz import build_mermaid as _build_mermaid
 from wiki.frontmatter import dump_note
-from wiki.vault import read_paper_frontmatters, vault_root
+from wiki.vault import VaultPathError, read_paper_frontmatters, vault_path, vault_root
 
 
 async def build_citation_graph(
@@ -42,9 +42,11 @@ async def build_citation_graph(
     frontmatter = {"title": f"인용 흐름 — {title}", "anchor": anchor.get("arxiv_id", "")}
     body = f"# 인용 흐름: {title}\n\n```mermaid\n{mermaid}\n```\n"
 
-    graphs_dir = vault_root() / "graphs"
-    graphs_dir.mkdir(parents=True, exist_ok=True)
-    graph_path = graphs_dir / f"{final_slug}.md"
+    try:
+        graph_path = vault_path(f"graphs/{final_slug}.md")
+    except VaultPathError as e:
+        return f"❌ {e}"
+    graph_path.parent.mkdir(parents=True, exist_ok=True)
     graph_path.write_text(dump_note(frontmatter, body), encoding="utf-8")
 
     return (

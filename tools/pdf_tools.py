@@ -9,11 +9,21 @@ import re
 
 import pymupdf
 
-from core import config
 from sources.arxiv import download_pdf as _download_pdf, normalize_arxiv_id
 from wiki.figures import extract_for_paper as _extract_for_paper
 from wiki.pdf_store import pdf_exists, pdf_path, save_pdf
 from wiki.tables import extract_for_paper as _extract_tables_for_paper
+from wiki.vault import VaultPathError, paper_dir
+
+
+def _slug_error(slug: str | None) -> str | None:
+    """slug가 vault `papers/` 아래 한 폴더 이름이 아니면 ❌ 메시지."""
+    try:
+        if slug:
+            paper_dir(slug)
+    except VaultPathError as e:
+        return f"❌ {e}"
+    return None
 
 
 def _build_keep_matcher(keep: list[str], prefix: str):
@@ -135,6 +145,8 @@ async def extract_paper_figures(paper_id: str, slug: str | None = None) -> str:
     if not pdf_exists(aid):
         return f"❌ PDF 캐시 없음: {aid}\n   먼저 download_paper(\"{aid}\")를 호출하세요."
 
+    if err := _slug_error(slug):
+        return err
     figures = _extract_for_paper(aid, vault_slug=slug)
     if not figures:
         return f"📁 추출된 figure 없음: {aid}"
@@ -167,7 +179,9 @@ async def prune_paper_figures(paper_id: str, keep: list[str], slug: str | None =
         return f"❌ 유효한 arXiv ID가 아닙니다: {paper_id}"
 
     where = slug or aid
-    fig_dir = config.VAULT_PATH / "papers" / where / "figures"
+    if err := _slug_error(where):
+        return err
+    fig_dir = paper_dir(where) / "figures"
     if not fig_dir.is_dir():
         return f"❌ figures 디렉토리 없음: {fig_dir}\n   먼저 extract_paper_figures를 호출하세요."
 
@@ -206,6 +220,8 @@ async def extract_paper_tables(paper_id: str, slug: str | None = None) -> str:
     if not pdf_exists(aid):
         return f"❌ PDF 캐시 없음: {aid}\n   먼저 download_paper(\"{aid}\")를 호출하세요."
 
+    if err := _slug_error(slug):
+        return err
     tables = _extract_tables_for_paper(aid, vault_slug=slug)
     if not tables:
         return f"📁 추출된 table 없음: {aid}"
@@ -233,7 +249,9 @@ async def prune_paper_tables(paper_id: str, keep: list[str], slug: str | None = 
         return f"❌ 유효한 arXiv ID가 아닙니다: {paper_id}"
 
     where = slug or aid
-    tab_dir = config.VAULT_PATH / "papers" / where / "tables"
+    if err := _slug_error(where):
+        return err
+    tab_dir = paper_dir(where) / "tables"
     if not tab_dir.is_dir():
         return f"❌ tables 디렉토리 없음: {tab_dir}\n   먼저 extract_paper_tables를 호출하세요."
 
@@ -280,7 +298,9 @@ async def render_paper_page(
         return f"❌ page는 1 이상이어야 합니다: {page}"
 
     where = slug or aid
-    out_dir = config.VAULT_PATH / "papers" / where / "pages"
+    if err := _slug_error(where):
+        return err
+    out_dir = paper_dir(where) / "pages"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     try:

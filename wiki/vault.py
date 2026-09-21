@@ -24,6 +24,24 @@ def vault_root() -> Path:
     return config.VAULT_PATH
 
 
+class VaultPathError(ValueError):
+    """도구 인자로 받은 경로·slug가 vault 밖을 가리킨다."""
+
+    def __init__(self, rel: str | Path) -> None:
+        super().__init__(f"vault 밖 경로는 허용되지 않습니다: {str(rel)!r}")
+
+
+def vault_path(rel: str | Path) -> Path:
+    """vault 루트 기준 상대경로 → 경로. `..`·절대경로·심볼릭 링크로 vault를 벗어나면 VaultPathError."""
+    root = vault_root()
+    path = root / rel
+    base = root.resolve()
+    resolved = path.resolve()
+    if resolved != base and base not in resolved.parents:
+        raise VaultPathError(rel)
+    return path
+
+
 def ensure_vault() -> None:
     """vault root + 표준 subdir 생성. 이미 있으면 no-op."""
     for sub in _STANDARD_SUBDIRS:
@@ -31,7 +49,9 @@ def ensure_vault() -> None:
 
 
 def paper_dir(slug: str) -> Path:
-    """slug는 title-slug 또는 호환을 위한 임의 식별자 (ADR-016)."""
+    """slug는 title-slug 또는 호환을 위한 임의 식별자 (ADR-016). `papers/` 아래 한 폴더 이름이어야 한다."""
+    if not slug or slug in (".", "..") or "/" in slug or "\\" in slug:
+        raise VaultPathError(slug)
     return vault_root() / "papers" / slug
 
 

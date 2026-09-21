@@ -17,12 +17,13 @@ from pathlib import Path
 from core.slug import is_arxiv_id
 from wiki.frontmatter import dump_note
 from wiki.vault import (
+    VaultPathError,
     ensure_vault,
     paper_dir,
     paper_note_path,
     read_note,
     resolve_paper_by_arxiv_id,
-    vault_root,
+    vault_path,
     write_note,
 )
 
@@ -32,7 +33,7 @@ def _resolve_slug(slug: str) -> Path:
     if "/" in s:
         if not s.endswith(".md"):
             s = s + ".md"
-        return vault_root() / s
+        return vault_path(s)
     if is_arxiv_id(s):
         # ADR-016: arxiv_id로 title-slug 폴더 lookup.
         found = resolve_paper_by_arxiv_id(s)
@@ -53,7 +54,10 @@ def wiki_read_note(slug: str) -> str:
     Args:
         slug: arxiv_id ("2301.12597") 또는 vault 상대경로 ("topics/vlm").
     """
-    path = _resolve_slug(slug)
+    try:
+        path = _resolve_slug(slug)
+    except VaultPathError as e:
+        return f"❌ {e}"
     if not path.is_file():
         return f"❌ 노트 없음: {slug}\n   path: {path}"
     return read_note(path)
@@ -75,7 +79,10 @@ def wiki_write_note(slug: str, frontmatter: dict | str | None = None, body: str 
                 frontmatter = None
         except (json.JSONDecodeError, ValueError):
             frontmatter = None
-    path = _resolve_slug(slug)
+    try:
+        path = _resolve_slug(slug)
+    except VaultPathError as e:
+        return f"❌ {e}"
     content = dump_note(frontmatter or {}, body)
     write_note(path, content)
     return f"💾 노트 저장: {path}"
@@ -88,7 +95,10 @@ def wiki_list(prefix: str = "papers") -> str:
         prefix: vault root 기준 디렉토리. 기본 'papers'.
     """
     ensure_vault()
-    base = vault_root() / prefix
+    try:
+        base = vault_path(prefix)
+    except VaultPathError as e:
+        return f"❌ {e}"
     if not base.exists():
         return f"❌ 디렉토리 없음: {prefix}"
     items = sorted(
@@ -258,7 +268,10 @@ def wiki_link(source: str, target: str, note: str = "") -> str:
         target: 가리킬 노트 slug (Obsidian wikilink).
         note: 링크 옆 한 줄 설명 (옵션).
     """
-    path = _resolve_slug(source)
+    try:
+        path = _resolve_slug(source)
+    except VaultPathError as e:
+        return f"❌ {e}"
     if not path.is_file():
         return f"❌ source 노트 없음: {source}"
     existing = read_note(path)

@@ -20,10 +20,10 @@ from pathlib import Path
 
 import pymupdf
 
-from core import config
 from core.slug import slugify_caption
 from wiki import vision
 from wiki.pdf_store import pdf_path
+from wiki.vault import paper_dir
 
 _RENDER_DPI = 150
 
@@ -94,6 +94,6 @@ def extract_for_paper(arxiv_id: str, kind: str, vault_slug: str | None = None) -
     """편의 wrapper. `papers/<vault_slug>/<subdir>/`에 저장 (ADR-016)."""
     subdir = _KINDS[kind][2]
     slug = vault_slug or arxiv_id
-    out_dir = config.VAULT_PATH / "papers" / slug / subdir
+    out_dir = paper_dir(slug) / subdir
     raw = extract_visuals(pdf_path(arxiv_id), out_dir, kind)
     return [{"file": f"{subdir}/{r['file']}", "caption": r["caption"]} for r in raw]
