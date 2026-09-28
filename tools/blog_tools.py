@@ -2,12 +2,26 @@
 
 `tech-blog-digest` 스킬의 입력. seen 상태는 조회(get)와 분리 — 요약을 vault에
 저장한 뒤 mark_blog_posts_seen으로 확정해야 다음 실행에서 제외된다.
+
+소스별 목록 fetch는 서로 독립이라 `asyncio.gather`로 동시에 보낸다 — 총 대기 시간이
+소스 지연의 합이 아니라 최대값이 된다. 한 소스의 실패는 그 소스의 한 줄로만 남고
+나머지 결과는 그대로 나온다(순차일 때와 같은 격리).
 """
 
 from __future__ import annotations
 
+import asyncio
+
 from sources import tech_blogs
 from wiki.blog_state import mark_seen as _mark_seen, seen_urls as _seen_urls
+
+
+async def _collect(slug: str) -> tuple[list[dict], Exception | None]:
+    """소스 하나의 목록 수집. 실패는 예외 객체로 돌려줘 다른 소스의 수집을 막지 않는다."""
+    try:
+        return await tech_blogs.fetch_posts(slug), None
+    except Exception as e:
+        return [], e
 
 
 async def get_tech_blog_posts(limit_per_source: int = 10) -> str:
@@ -22,11 +36,12 @@ async def get_tech_blog_posts(limit_per_source: int = 10) -> str:
     """
     seen = _seen_urls()
     lines = [f"🗞️ Tech Blog 신규 포스트 (소스별 최대 {limit_per_source})"]
-    for slug, cfg in tech_blogs.SOURCES.items():
-        try:
-            posts = await tech_blogs.fetch_posts(slug)
-        except Exception as e:
-            lines.append(f"\n⚠️ {slug} 수집 실패: {e}")
+    slugs = list(tech_blogs.SOURCES)
+    results = await asyncio.gather(*(_collect(slug) for slug in slugs))
+    for slug, (posts, error) in zip(slugs, results):  # gather는 입력 순서를 보존 — 출력 순서 유지
+        cfg = tech_blogs.SOURCES[slug]
+        if error is not None:
+            lines.append(f"\n⚠️ {slug} 수집 실패: {error}")
             continue
         fresh = [p for p in posts if p["url"] not in seen]
         fresh.sort(key=lambda p: p.get("published") or "", reverse=True)
