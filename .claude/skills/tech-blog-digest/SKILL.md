@@ -17,7 +17,7 @@ inputs:
 | # | 도구 | 규칙 |
 |---|---|---|
 | 1 | `get_tech_blog_posts()` | 소스별 미요약 신규 (최신순) |
-| 2 | 각 포스트에 `read_blog_post(url)` | 본문. OpenAI는 본문 불가 — step 1의 RSS 발췌 사용 |
+| 2 | 각 포스트에 `read_blog_post(url)` — 여러 포스트를 **한 턴에 함께** 호출 | 본문. 서버가 같은 소스는 순차·다른 소스는 동시로 처리하므로 소스를 섞어 한꺼번에 불러도 안전. OpenAI는 본문 불가 — step 1의 RSS 발췌 사용 |
 | 3 | 요약 (LLM) | 포스트당 2-3문단 한국어 (무엇을/왜/연구 시사점). OpenAI는 1문단 |
 | 4 | `wiki_write_note("tech-blog-digest/{date}", fm, body)` | 같은 날 재실행이면 `wiki_read_note` 후 섹션 append |
 | 5 | `mark_blog_posts_seen([이번 url 전부])` | **반드시 step 4 성공 후** — 먼저 seen을 남기면 포스트가 유실된다 |

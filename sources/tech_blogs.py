@@ -16,12 +16,18 @@
 
 본문 추출 휴리스틱: script/style 제거 → `<article>` (없으면 `<main>`) 스코프 →
 `<p>` 중 80자 이상만 join. 새 의존성 없음 (stdlib re + html + ElementTree).
+
+동시성 규칙: **같은 소스는 순차, 다른 소스는 동시.** 목록·글 페이지 fetch는 소스별 Lock 안에서
+실행되므로 호출자가 여러 URL을 한꺼번에 요청해도 한 호스트에는 요청이 하나씩만 나간다(봇 차단·429
+회피). 서로 다른 소스는 Lock이 달라 겹쳐 진행된다. 디스크 캐시 hit는 Lock을 기다리지 않는다.
 """
 
 from __future__ import annotations
 
+import asyncio
 import html as html_lib
 import re
+import weakref
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -201,12 +207,32 @@ def source_for_url(url: str) -> str | None:
     return None
 
 
+# 소스별 직렬화 Lock. asyncio 프리미티브는 처음 대기한 이벤트 루프에 묶이므로 루프마다 따로 만든다
+# (CLI의 asyncio.run·테스트는 호출마다 새 루프). 루프가 수거되면 항목도 사라진다.
+_source_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _source_lock(source: str) -> asyncio.Lock:
+    """현재 이벤트 루프의 소스별 Lock — 같은 소스의 네트워크 요청을 한 번에 하나로 묶는다."""
+    loop = asyncio.get_running_loop()
+    per_loop = _source_locks.get(loop)
+    if per_loop is None:
+        per_loop = _source_locks[loop] = {}
+    lock = per_loop.get(source)
+    if lock is None:
+        lock = per_loop[source] = asyncio.Lock()
+    return lock
+
+
 async def fetch_posts(source: str) -> list[dict]:
     """소스의 목록 endpoint를 fetch(디스크 캐시 경유) 후 표준 post 리스트로 파싱."""
     cfg = SOURCES[source]
 
     async def _do():
-        return await get(cfg["url"])
+        async with _source_lock(source):
+            return await get(cfg["url"])
 
     text = await cache.get_or_fetch(f"tech_blogs:list:{source}", _do, ttl=LIST_CACHE_TTL)
     if not isinstance(text, str):
@@ -217,10 +243,15 @@ async def fetch_posts(source: str) -> list[dict]:
 
 
 async def fetch_post_page(url: str) -> str:
-    """글 페이지 HTML fetch (디스크 캐시 경유). 본문은 불변이라 TTL 30일."""
+    """글 페이지 HTML fetch (디스크 캐시 경유). 본문은 불변이라 TTL 30일.
+
+    같은 소스의 페이지 요청은 소스 Lock으로 순차 실행 — 여러 URL을 동시에 요청해도 호스트당 하나씩.
+    """
+    source = source_for_url(url) or urlparse(url).netloc.lower()
 
     async def _do():
-        return await get(url)
+        async with _source_lock(source):
+            return await get(url)
 
     html_text = await cache.get_or_fetch(f"tech_blogs:page:{url}", _do, ttl=BODY_CACHE_TTL)
     return html_text if isinstance(html_text, str) else ""
