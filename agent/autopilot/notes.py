@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from core.slug import slugify_title
 from wiki.frontmatter import dump_note
+from wiki.pdf_store import pdf_wikilink
 from wiki.vault import paper_note_path, vault_root, write_note
 
 FIGURES_SKIPPED_LINE = "_Figure/table 추출 생략됨 (무인 수집). 필요 시 on-demand 추출 가능._"
@@ -166,6 +167,7 @@ def render_paper_note(
     }
     body = [
         f"# {meta.title}",
+        pdf_wikilink(meta.arxiv_id),
         "",
         "## TL;DR",
         draft.tldr.strip(),

@@ -1,7 +1,8 @@
-"""MCP tools: get_tech_blog_posts / read_blog_post / mark_blog_posts_seen (ADR-030).
+"""MCP tools: get_tech_blog_posts / read_blog_post / mark_blog_posts_seen (ADR-030, ADR-070).
 
 `tech-blog-digest` 스킬의 입력. seen 상태는 조회(get)와 분리 — 요약을 vault에
 저장한 뒤 mark_blog_posts_seen으로 확정해야 다음 실행에서 제외된다.
+조회 범위는 소스별 마지막 seen 발행일 이후 — 옛 미요약 글(백로그)은 받지 않는다.
 
 소스별 목록 fetch는 서로 독립이라 `asyncio.gather`로 동시에 보낸다 — 총 대기 시간이
 소스 지연의 합이 아니라 최대값이 된다. 한 소스의 실패는 그 소스의 한 줄로만 남고
@@ -24,15 +25,17 @@ async def _collect(slug: str) -> tuple[list[dict], Exception | None]:
         return [], e
 
 
-async def get_tech_blog_posts(limit_per_source: int = 10) -> str:
+async def get_tech_blog_posts(limit_per_source: int = 30) -> str:
     """테크 블로그(Anthropic·OpenAI·Google DeepMind·Google Research)의 미요약 신규
     포스트를 소스별 최신순 최대 N개 반환합니다.
 
-    mark_blog_posts_seen으로 처리 완료된 URL은 제외 — 지난 실행 이후 쌓인
-    포스트만 나옵니다. 조회만으로 seen 상태는 바뀌지 않습니다.
+    소스마다 mark_blog_posts_seen으로 처리한 포스트 중 가장 최근 발행일 이후
+    (같은 날짜 포함) 글만 나옵니다 — 그보다 옛날의 미요약 글은 한도가 남아도
+    받지 않습니다. 피드에 처리한 글이 없으면(첫 실행) 최신순 N개.
+    조회만으로 seen 상태는 바뀌지 않습니다.
 
     Args:
-        limit_per_source: 소스당 최대 포스트 수 (기본 10).
+        limit_per_source: 소스당 최대 포스트 수 (기본 30). 넘친 글은 다음 실행에서도 제외.
     """
     seen = _seen_urls()
     lines = [f"🗞️ Tech Blog 신규 포스트 (소스별 최대 {limit_per_source})"]
@@ -43,7 +46,9 @@ async def get_tech_blog_posts(limit_per_source: int = 10) -> str:
         if error is not None:
             lines.append(f"\n⚠️ {slug} 수집 실패: {error}")
             continue
-        fresh = [p for p in posts if p["url"] not in seen]
+        # 발행일은 날짜 단위라 마지막 seen과 같은 날 올라온 글도 남긴다 (>=).
+        cutoff = max((p.get("published") or "" for p in posts if p["url"] in seen), default="")
+        fresh = [p for p in posts if p["url"] not in seen and (p.get("published") or "") >= cutoff]
         fresh.sort(key=lambda p: p.get("published") or "", reverse=True)
         picked = fresh[:limit_per_source]
         mode = "본문 요약" if cfg["body"] else "RSS 요약 — 본문 차단"

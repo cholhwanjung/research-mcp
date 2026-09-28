@@ -56,6 +56,7 @@ status: read
 ## Body (고정 헤더)
 ```markdown
 # {title}
+[[pdfs/{arxiv_id}.pdf|PDF]]   ← H1 바로 아래 한 줄. 저장된 PDF를 여는 링크, 표기는 PDF로 고정
 ## TL;DR
 ## Key Contributions
 ## Methods

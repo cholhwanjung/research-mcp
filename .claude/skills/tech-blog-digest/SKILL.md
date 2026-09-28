@@ -1,22 +1,22 @@
 ---
 name: tech-blog-digest
-description: Anthropic/OpenAI/DeepMind/Google Research 블로그의 미요약 신규 포스트(소스별 최대 10)를 한국어로 요약해 vault `tech-blog-digest/{date}.md`에 누적한다. seen 추적으로 새 포스트만 처리.
+description: Anthropic/OpenAI/DeepMind/Google Research 블로그에서 소스별 마지막 요약 이후 올라온 포스트(소스별 최대 30)를 한국어로 요약해 vault `tech-blog-digest/{date}.md`에 누적한다. seen보다 옛날 글은 건너뛴다.
 trigger:
   - "테크 블로그 요약"
   - "blog digest"
   - "블로그 신착 정리"
 inputs:
-  - 'limit_per_source (선택, 기본 10)'
+  - 'limit_per_source (선택, 기본 30)'
 ---
 
 ## When to invoke
-실행할 때마다 — 지난 실행에서 seen 처리된 포스트는 제외. 소스당 신규가 한도를 넘으면 최신순 한도만, 나머지는 다음 실행으로 이월(seen에 안 넣으므로 자동).
+실행할 때마다 — 소스별로 마지막 seen 포스트의 발행일 이후 글만 받는다(같은 날짜 포함). 그보다 옛날의 미요약 글은 한도가 남아도 읽지 않는다. 한도를 넘으면 최신순 한도만 요약하고, 넘친 글은 다음 실행에서도 제외된다.
 
 ## Steps
 
 | # | 도구 | 규칙 |
 |---|---|---|
-| 1 | `get_tech_blog_posts()` | 소스별 미요약 신규 (최신순) |
+| 1 | `get_tech_blog_posts()` | 소스별 마지막 seen 이후 신규 (최신순) |
 | 2 | 각 포스트에 `read_blog_post(url)` — 여러 포스트를 **한 턴에 함께** 호출 | 본문. 서버가 같은 소스는 순차·다른 소스는 동시로 처리하므로 소스를 섞어 한꺼번에 불러도 안전. OpenAI는 본문 불가 — step 1의 RSS 발췌 사용 |
 | 3 | 요약 (LLM) | 포스트당 2-3문단 한국어 (무엇을/왜/연구 시사점). OpenAI는 1문단 |
 | 4 | `wiki_write_note("tech-blog-digest/{date}", fm, body)` | 같은 날 재실행이면 `wiki_read_note` 후 섹션 append |
@@ -42,7 +42,7 @@ post_count: 8
 요약만 저장(본문 전문 금지 — 저작권·크기). 원문 링크 필수. 신규 0건 소스는 섹션 생략.
 
 ## Output
-노트 경로 · 소스별 요약 편수 · 이월 건수(있을 때).
+노트 경로 · 소스별 요약 편수 · 한도로 제외된 건수(있을 때).
 
 ## Failure handling
 - 소스 1개 수집 실패 → 나머지 진행, 노트에 "{source} 수집 실패" 한 줄.
