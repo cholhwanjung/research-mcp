@@ -171,6 +171,7 @@ uv sync
 | `PDF_PATH` | `$OBSIDIAN_VAULT_PATH/pdfs` | PDF 원본 저장 위치 |
 | `GOOGLE_API_KEY` | (없음) | Gemini Vision — figure/table bbox 추정에 필요 |
 | `SS_API_KEY` | (없음) | Semantic Scholar API key. 설정 시 rate-limit 완화 |
+| `OPENALEX_API_KEY` | (없음) | OpenAlex API key(무료). 없어도 동작(일 1,000크레딧), 설정 시 10배. `get_citations_by_citations`가 SS에서 잘린 연도를 보강할 때만 호출 |
 
 ---
 

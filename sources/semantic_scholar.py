@@ -132,13 +132,54 @@ async def fetch_network_papers(
     sleep_sec: float = 1.5,
     publication_date_or_year: str | None = None,
 ) -> list[dict]:
-    """SS API offset 기반 페이지네이션으로 citations / references 수집.
+    """`fetch_network_papers_paged`의 list 계약 — 잘림 신호가 필요 없는 호출자용."""
+    papers, _ = await fetch_network_papers_paged(
+        pid, endpoint, item_key, max_fetch, sleep_sec, publication_date_or_year
+    )
+    return papers
+
+
+async def fetch_citations_by_year(
+    pid: str,
+    years,
+    max_fetch_per_year: int = 1000,
+    sleep_sec: float = 1.5,
+) -> dict[int, tuple[list[dict], bool]]:
+    """연도마다 `publicationDateOrYear=YYYY`로 citations를 따로 받는다 → {year: (papers, truncated)}.
+
+    citations endpoint가 publicationDate 내림차순 고정이라 한 번에 `max_fetch`를 자르면 인기 논문은
+    가장 최근 몇 달만 남는다 (ADR-071). 연도별로 받으면 시기별 후보가 균등해지고, 한 해가
+    `max_fetch_per_year`로 잘리면 `truncated=True`로 알린다.
+    """
+    out: dict[int, tuple[list[dict], bool]] = {}
+    for i, year in enumerate(years):
+        if i:
+            await asyncio.sleep(sleep_sec)  # 연도 사이도 간격 — 1000건 요청 연속 5회가 429를 불렀다
+        out[year] = await fetch_network_papers_paged(
+            pid, "citations", "citingPaper", max_fetch_per_year, sleep_sec, str(year)
+        )
+    return out
+
+
+async def fetch_network_papers_paged(
+    pid: str,
+    endpoint: str,
+    item_key: str,
+    max_fetch: int,
+    sleep_sec: float = 1.5,
+    publication_date_or_year: str | None = None,
+) -> tuple[list[dict], bool]:
+    """SS API offset 기반 페이지네이션으로 citations / references 수집 → (papers, truncated).
+
+    `truncated`는 끝까지 받지 못했을 때 True — `max_fetch`에 닿았는데 SS `next`가 남았거나,
+    응답이 dict가 아니어서(최종 429 텍스트 등) 중단된 경우. "정말 0건"과 구분하기 위함.
 
     공식 문서 (sources/swagger.json) 기준:
     - limit 최대 1000, 응답 `next` 필드로 다음 offset.
     - **citations endpoint는 publicationDate 내림차순으로 응답** — 인기 논문에서
       첫 페이지는 신생 인용수 0 논문으로 가득. 의미 있는 결과를 얻으려면
-      `publication_date_or_year=":YYYY"` 필터로 최근 1년을 잘라낸다.
+      `publication_date_or_year=":YYYY"` 필터로 최근 1년을 잘라내거나(ADR-014)
+      `fetch_citations_by_year`로 연도별로 받는다(ADR-071).
     - light 필드 + `isInfluential` (ADR-014 보강): 응답 크기는 유지하면서
       velocity 임계값 미달이라도 SS가 영향력 있다고 표시한 인용을 살린다.
       entry top-level의 `isInfluential`은 paper dict의 `is_influential` 키로 주입.
@@ -147,6 +188,7 @@ async def fetch_network_papers(
     BATCH = 1000
     all_papers: list[dict] = []
     offset = 0
+    truncated = False
 
     while len(all_papers) < max_fetch:
         limit = min(BATCH, max_fetch - len(all_papers))
@@ -156,6 +198,7 @@ async def fetch_network_papers(
             params["publicationDateOrYear"] = publication_date_or_year
         resp = await ss_get(url, params)
         if not isinstance(resp, dict):
+            truncated = True
             break
 
         items: list[dict] = []
@@ -177,11 +220,14 @@ async def fetch_network_papers(
         next_offset = resp.get("next")
         if next_offset is None:
             break
+        if len(all_papers) >= max_fetch:
+            truncated = True
+            break
 
         offset = next_offset
         await asyncio.sleep(sleep_sec)
 
-    return all_papers
+    return all_papers, truncated
 
 
 async def get_contexts(citing_id: str, cited_id: str) -> list[str]:

@@ -37,6 +37,36 @@ def sort_by_velocity(
     )
 
 
+def _passes_velocity(p: dict, current_year: int, min_velocity: float, bias_newcomer: bool = False) -> bool:
+    """ADR-014 보강: velocity 미달이라도 SS가 영향력 있다고 표시한 인용은 살림."""
+    if citation_velocity(p, current_year, bias_newcomer) >= min_velocity:
+        return True
+    return bool(p.get("is_influential"))
+
+
+def interleave_by_year(
+    buckets: dict[int, list[dict]],
+    current_year: int,
+    min_velocity: float = 0.0,
+) -> list[dict]:
+    """연도 bucket마다 velocity 순 + min_velocity 필터 뒤, 연도 오름차순으로 교대(round-robin) 합침 (ADR-071).
+
+    교대 순서라 앞부분이 뒤의 길이와 무관하게 고정된다 — `top_k`를 늘려 다시 불러도 prefix가 같다.
+    """
+    ranked: list[list[dict]] = []
+    for year in sorted(buckets):
+        ps = sort_by_velocity(buckets[year], current_year)
+        if min_velocity > 0:
+            ps = [p for p in ps if _passes_velocity(p, current_year, min_velocity)]
+        ranked.append(ps)
+    out: list[dict] = []
+    for rank in range(max((len(r) for r in ranked), default=0)):
+        for r in ranked:
+            if rank < len(r):
+                out.append(r[rank])
+    return out
+
+
 def render_sorted_list(
     papers: list[dict],
     header: str,
@@ -47,22 +77,22 @@ def render_sorted_list(
     current_year: int | None = None,
     bias_newcomer: bool = False,
     min_velocity: float = 0.0,
+    preserve_order: bool = False,
 ) -> str:
-    """sort='count'(기본)·'velocity'. velocity 모드는 vel 수치 + min_velocity 필터."""
-    filtered_out = 0
-    if sort == "velocity":
-        if current_year is None:
-            from datetime import datetime, timezone
+    """sort='count'(기본)·'velocity'. velocity 모드는 vel 수치 + min_velocity 필터.
 
-            current_year = datetime.now(timezone.utc).year
+    `preserve_order=True`면 정렬·필터 없이 주어진 순서로 `top_k`까지 렌더(호출측이 이미 정렬한 경우)."""
+    filtered_out = 0
+    if sort == "velocity" and current_year is None:
+        from datetime import datetime, timezone
+
+        current_year = datetime.now(timezone.utc).year
+    if preserve_order:
+        sorted_papers = papers[:top_k]
+    elif sort == "velocity":
         ranked = sort_by_velocity(papers, current_year, bias_newcomer)
         if min_velocity > 0:
-            # ADR-014 보강: velocity 미달이라도 SS가 영향력 있다고 표시한 인용은 살림.
-            def _keep(p: dict) -> bool:
-                if citation_velocity(p, current_year, bias_newcomer) >= min_velocity:
-                    return True
-                return bool(p.get("is_influential"))
-            kept = [p for p in ranked if _keep(p)]
+            kept = [p for p in ranked if _passes_velocity(p, current_year, min_velocity, bias_newcomer)]
             filtered_out = len(ranked) - len(kept)
             ranked = kept
         sorted_papers = ranked[:top_k]

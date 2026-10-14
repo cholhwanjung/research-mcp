@@ -3,13 +3,21 @@
 D-3 (Phase 3.1):
 - 기본 `max_fetch=200`로 lazy growth — 첫 호출 부하 완화.
 - `sort='count'|'velocity'` 옵션 — velocity는 ADR-004.
+ADR-071: `get_citations_by_citations` 기본은 연도별 층화 + 잘린 연도 OpenAlex 보강.
 """
 
 from __future__ import annotations
 
 from analysis.ranking import render_sorted_list as _render_sorted_list
+from analysis.ranking import interleave_by_year as _interleave_by_year
+from core.filter import is_survey as _is_survey
+from sources.openalex import (
+    resolve_work_id as _oa_resolve_work_id,
+    top_citing_by_year as _oa_top_citing_by_year,
+)
 from sources.semantic_scholar import (
     SS_BASE,
+    fetch_citations_by_year as _fetch_citations_by_year,
     fetch_network_papers as _fetch_network_papers,
     lookup_error_message as _lookup_error_message,
     get_contexts as _get_contexts,
@@ -76,30 +84,36 @@ async def get_citations_by_citations(
     current_year: int | None = None,
     min_velocity: float = 10.0,
     exclude_recent_year: bool = True,
+    stratify: bool = True,
 ) -> str:
-    """논문을 인용(citation)한 후속 연구들을 정렬해 반환합니다.
+    """논문을 인용(citation)한 후속 연구들을 시기별로 균등하게 정렬해 반환합니다.
 
-    SS citations endpoint는 **publicationDate 내림차순**으로 응답한다 (인기 논문은
-    첫 페이지가 인용수 0인 신생 논문으로 가득 차 의미 있는 결과 추출에 다수의 API 호출
-    필요). 이를 막기 위해 `exclude_recent_year=True`이면 `publicationDateOrYear=:<year-1>`
-    필터로 가장 최근 1년을 제외 — velocity ≥ 10 같은 임계값과 정합 (신생 1년 미만은
-    누적 인용 시간 부족).
+    SS citations endpoint는 **publicationDate 내림차순**으로 응답한다. 인기 논문(연 인용 1,000건
+    초과)은 한 번에 `max_fetch`를 자르면 가장 최근 몇 달만 남아 2~3년 전 주요 후속작이 빠진다
+    (LoRA 실측: 1,000편 전부 2025년). 기본(`stratify=True`)은 anchor 출판연도부터 기준연도까지
+    **연도마다** 받아 velocity 순으로 정리한 뒤 연도 교대로 상위를 뽑는다 — 앞부분은 `top_k`와
+    무관하게 고정된다. 한 해가 `max_fetch`로 잘렸으면 OpenAlex의 그 해 인용수 상위를 SS에서
+    DOI로 되찾아 합집합으로 섞는다 (ADR-071). 응답 끝의 `year=… fetched=… truncated=…
+    openalex_added=…` 줄이 연도별 커버리지다.
+
+    `exclude_recent_year=True`이면 가장 최근 1년(기준연도)을 제외 — velocity ≥ 10 같은 임계값과
+    정합 (신생 1년 미만은 누적 인용 시간 부족).
 
     Args:
         paper_id:            arXiv ID (예: "2304.08485"), DOI, 또는 Semantic Scholar ID.
         top_k:               반환할 상위 논문 수 (기본 20).
-        max_fetch:           최대 수집 citation 수 (기본 1000).
-        sort:                "velocity"(기본, ADR-004) 또는 "count".
-        current_year:        velocity 기준 연도. None이면 현재.
-        min_velocity:        velocity 모드일 때 최소 velocity (기본 10).
-        exclude_recent_year: True면 publication 직전 연도까지로 SS 응답을 제한
-                             (가장 최근 1년 신생 제외, 기본 True).
+        max_fetch:           연도별(층화) 또는 전체(비층화) 최대 수집 citation 수 (기본 1000).
+        sort:                "velocity"(기본, ADR-004) 또는 "count". 층화 모드는 velocity 고정.
+        current_year:        velocity·연도 범위 기준 연도. None이면 현재.
+        min_velocity:        velocity 모드일 때 최소 velocity (기본 10). 층화 모드는 연도별 적용.
+        exclude_recent_year: True면 기준연도(가장 최근 1년)를 제외 (기본 True).
+        stratify:            False면 예전처럼 한 번에 `max_fetch`만 받는다(anchor 출판연도를 모를 때도 이 경로).
     """
     from datetime import datetime, timezone
 
     detail = await _ss_get(
         f"{SS_BASE}/{_resolve_id(paper_id)}",
-        {"fields": "paperId,title,citationCount"},
+        {"fields": "paperId,title,citationCount,year,externalIds"},
     )
     err = _lookup_error_message(paper_id, detail)
     if err:
@@ -111,8 +125,16 @@ async def get_citations_by_citations(
 
     if current_year is None:
         current_year = datetime.now(timezone.utc).year
-    pub_date_filter = f":{current_year - 1}" if exclude_recent_year else None
+    end_year = current_year - 1 if exclude_recent_year else current_year
+    anchor_year = detail.get("year")
 
+    if stratify and anchor_year and anchor_year <= end_year:
+        return await _citations_stratified(
+            detail, pid, paper_title, total, list(range(anchor_year, end_year + 1)),
+            top_k, max_fetch, current_year, min_velocity,
+        )
+
+    pub_date_filter = f":{end_year}" if exclude_recent_year else None
     cits = await _fetch_network_papers(
         pid,
         "citations",
@@ -148,6 +170,93 @@ async def get_citations_by_citations(
         current_year=current_year,
         min_velocity=min_velocity,
     )
+
+
+OPENALEX_TOP_PER_YEAR = 10  # 잘린 연도마다 OpenAlex에서 확인할 인용수 상위 수
+
+
+def _paper_keys(p: dict) -> set[str]:
+    ext = p.get("externalIds") or {}
+    keys = {k for k in (p.get("paperId"), ext.get("ArXiv"), ext.get("DOI")) if k}
+    return {str(k).lower() for k in keys}
+
+
+async def _openalex_fill(detail: dict, year: int, bucket: list[dict], work_id: str | None) -> int:
+    """잘린 `year` bucket에 OpenAlex 인용수 상위를 SS로 되찾아(DOI) 합집합으로 추가. 추가된 수를 돌려준다."""
+    if not work_id:
+        return 0
+    present: set[str] = set()
+    for p in bucket:
+        present |= _paper_keys(p)
+    added = 0
+    for w in await _oa_top_citing_by_year(work_id, year, limit=OPENALEX_TOP_PER_YEAR):
+        doi = w.get("doi")
+        if not doi or doi.lower() in present:
+            continue
+        if _is_survey(w.get("title")):  # ADR-021 survey 제외는 보강분에도 — SS 되찾기 전에 걸러 호출을 아낀다
+            continue
+        found = await _ss_get(
+            f"{SS_BASE}/DOI:{doi}",
+            {"fields": "paperId,title,year,citationCount,externalIds"},
+        )
+        if not isinstance(found, dict) or not found.get("paperId") or not found.get("title"):
+            continue
+        keys = _paper_keys(found) | {doi.lower()}
+        if keys & present:
+            continue
+        found.setdefault("is_influential", False)
+        found["source"] = "openalex"
+        bucket.append(found)
+        present |= keys
+        added += 1
+    return added
+
+
+async def _citations_stratified(
+    detail: dict, pid: str, paper_title: str, total: int, years: list[int],
+    top_k: int, max_fetch: int, current_year: int, min_velocity: float,
+) -> str:
+    raw = await _fetch_citations_by_year(pid, years, max_fetch_per_year=max_fetch)
+    buckets = {y: list(ps) for y, (ps, _) in raw.items()}
+    fetched_ss = sum(len(ps) for ps in buckets.values())
+    coverage: list[str] = []
+
+    work_id: str | None = None
+    if any(truncated for _, truncated in raw.values()):
+        ext = detail.get("externalIds") or {}
+        work_id = await _oa_resolve_work_id(arxiv_id=ext.get("ArXiv"), doi=ext.get("DOI"))
+
+    for y in years:
+        ss_n = len(buckets[y])
+        truncated = raw[y][1]
+        added = await _openalex_fill(detail, y, buckets[y], work_id) if truncated else 0
+        coverage.append(
+            f"   year={y} fetched={ss_n} truncated={'true' if truncated else 'false'} openalex_added={added}"
+        )
+
+    merged = _interleave_by_year(buckets, current_year, min_velocity)
+    if not merged:
+        if total == 0:
+            return f"'{paper_title}' — 인용 논문 0건 (SS citationCount=0)."
+        return (
+            f"'{paper_title}' — 인용 논문 0건 반환 (SS citationCount={total}). "
+            f"연도 {years[0]}~{years[-1]} · survey 제외 · min_velocity={min_velocity} 후 남은 것이 없거나 "
+            f"SS 인용 색인 지연. 도구 실패가 아니다. exclude_recent_year=False 또는 min_velocity=0으로 다시 불러 본다."
+        )
+
+    body = _render_sorted_list(
+        merged,
+        f"📥 '{paper_title}' — Citation 논문 (연도 교대 · 연도별 velocity 순 정렬)",
+        total,
+        fetched_ss + sum(1 for ps in buckets.values() for p in ps if p.get("source") == "openalex"),
+        top_k,
+        sort="velocity",
+        current_year=current_year,
+        preserve_order=True,
+    )
+    head, _, rest = body.partition("\n\n")
+    strat = f"   층화: years={years[0]}-{years[-1]} min_velocity={min_velocity} (연도별 적용) 후보={len(merged)}"
+    return "\n".join([head, strat, *coverage, "", rest])
 
 
 async def get_citation_contexts(citing_id: str, cited_id: str) -> str:
