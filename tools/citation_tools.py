@@ -17,6 +17,7 @@ from sources.openalex import (
 )
 from sources.semantic_scholar import (
     SS_BASE,
+    fetch_citations_by_month as _fetch_citations_by_month,
     fetch_citations_by_year as _fetch_citations_by_year,
     fetch_network_papers as _fetch_network_papers,
     lookup_error_message as _lookup_error_message,
@@ -92,9 +93,10 @@ async def get_citations_by_citations(
     초과)은 한 번에 `max_fetch`를 자르면 가장 최근 몇 달만 남아 2~3년 전 주요 후속작이 빠진다
     (LoRA 실측: 1,000편 전부 2025년). 기본(`stratify=True`)은 anchor 출판연도부터 기준연도까지
     **연도마다** 받아 velocity 순으로 정리한 뒤 연도 교대로 상위를 뽑는다 — 앞부분은 `top_k`와
-    무관하게 고정된다. 한 해가 `max_fetch`로 잘렸으면 OpenAlex의 그 해 인용수 상위를 SS에서
-    DOI로 되찾아 합집합으로 섞는다 (ADR-071). 응답 끝의 `year=… fetched=… truncated=…
-    openalex_added=…` 줄이 연도별 커버리지다.
+    무관하게 고정된다. 한 해가 `max_fetch`로 잘렸으면 월별 `YYYY-MM` 12회로 다시 받아 교체하고
+    (ADR-072), 월도 잘리면 OpenAlex의 그 해 인용수 상위를 SS에서 DOI로 되찾아 합집합으로 섞는다
+    (ADR-071). 응답 끝의 `year=… fetched=… truncated=… openalex_added=… split=none|month` 줄이
+    연도별 커버리지다.
 
     `exclude_recent_year=True`이면 가장 최근 1년(기준연도)을 제외 — velocity ≥ 10 같은 임계값과
     정합 (신생 1년 미만은 누적 인용 시간 부족).
@@ -102,7 +104,7 @@ async def get_citations_by_citations(
     Args:
         paper_id:            arXiv ID (예: "2304.08485"), DOI, 또는 Semantic Scholar ID.
         top_k:               반환할 상위 논문 수 (기본 20).
-        max_fetch:           연도별(층화) 또는 전체(비층화) 최대 수집 citation 수 (기본 1000).
+        max_fetch:           연도별·월별(층화) 또는 전체(비층화) 최대 수집 citation 수 (기본 1000).
         sort:                "velocity"(기본, ADR-004) 또는 "count". 층화 모드는 velocity 고정.
         current_year:        velocity·연도 범위 기준 연도. None이면 현재.
         min_velocity:        velocity 모드일 때 최소 velocity (기본 10). 층화 모드는 연도별 적용.
@@ -217,21 +219,30 @@ async def _citations_stratified(
     top_k: int, max_fetch: int, current_year: int, min_velocity: float,
 ) -> str:
     raw = await _fetch_citations_by_year(pid, years, max_fetch_per_year=max_fetch)
-    buckets = {y: list(ps) for y, (ps, _) in raw.items()}
+    buckets: dict[int, list[dict]] = {}
+    truncated: dict[int, bool] = {}
+    split: dict[int, str] = {}
+    for y in years:
+        ps, t = raw[y]
+        if t:
+            # 연 1,000건 초과(또는 응답 실패)로 잘린 해는 월별로 다시 받아 교체 — 월은 보통 1,000건 아래 (ADR-072)
+            ps, t = await _fetch_citations_by_month(pid, y, max_fetch_per_month=max_fetch)
+            split[y] = "month"
+        buckets[y], truncated[y] = list(ps), t
     fetched_ss = sum(len(ps) for ps in buckets.values())
     coverage: list[str] = []
 
     work_id: str | None = None
-    if any(truncated for _, truncated in raw.values()):
+    if any(truncated.values()):
         ext = detail.get("externalIds") or {}
         work_id = await _oa_resolve_work_id(arxiv_id=ext.get("ArXiv"), doi=ext.get("DOI"))
 
     for y in years:
         ss_n = len(buckets[y])
-        truncated = raw[y][1]
-        added = await _openalex_fill(detail, y, buckets[y], work_id) if truncated else 0
+        added = await _openalex_fill(detail, y, buckets[y], work_id) if truncated[y] else 0
         coverage.append(
-            f"   year={y} fetched={ss_n} truncated={'true' if truncated else 'false'} openalex_added={added}"
+            f"   year={y} fetched={ss_n} truncated={'true' if truncated[y] else 'false'} "
+            f"openalex_added={added} split={split.get(y, 'none')}"
         )
 
     merged = _interleave_by_year(buckets, current_year, min_velocity)

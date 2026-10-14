@@ -161,6 +161,30 @@ async def fetch_citations_by_year(
     return out
 
 
+async def fetch_citations_by_month(
+    pid: str,
+    year: int,
+    max_fetch_per_month: int = 1000,
+    sleep_sec: float = 1.5,
+) -> tuple[list[dict], bool]:
+    """`year`의 citations를 월별 `publicationDateOrYear=YYYY-MM` 12회로 받아 합친다 → (papers, truncated).
+
+    연 1,000건을 넘어 연도 bucket이 잘린 해에 쓴다 — 월은 보통 1,000건 아래라 그 해를 빠짐없이 받는다
+    (LoRA 2023 실측: 월 59~292건, ADR-072). 한 달이라도 잘리면 truncated=True.
+    """
+    papers: list[dict] = []
+    truncated = False
+    for month in range(1, 13):
+        if month > 1:
+            await asyncio.sleep(sleep_sec)
+        ps, t = await fetch_network_papers_paged(
+            pid, "citations", "citingPaper", max_fetch_per_month, sleep_sec, f"{year}-{month:02d}"
+        )
+        papers.extend(ps)
+        truncated = truncated or t
+    return papers, truncated
+
+
 async def fetch_network_papers_paged(
     pid: str,
     endpoint: str,
