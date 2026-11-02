@@ -1,7 +1,8 @@
 """테크 블로그 목록/본문 fetch + 파싱 (ADR-030).
 
 소스 레지스트리 (실측 2026-07-13):
-- anthropic: RSS 없음 → `/news` HTML anchor 파싱 (anchor 텍스트에 title·날짜 포함).
+- anthropic: RSS 없음 → `/news` HTML 카드 파싱. 2026-10 개편 뒤 제목은 링크 안 <h3>,
+  발행일은 링크 밖 같은 카드의 <time>, 카드마다 카테고리 링크가 섞임 (실측 2026-11-02).
   본문은 `<article>` 스코프로 깨끗하게 추출됨.
 - openai:    공식 RSS. 개별 글 페이지는 403 JS challenge (브라우저 UA로도 차단)
   → `body: False`, RSS description으로만 요약.
@@ -115,38 +116,57 @@ def parse_rss(xml_text: str, source: str) -> list[dict]:
 
 
 _ANTHROPIC_BASE = "https://www.anthropic.com"
-_NEWS_ANCHOR_RE = re.compile(r'<a[^>]+href="(/news/[^"#?]+)"[^>]*>(.*?)</a>', re.DOTALL)
-_ANTHROPIC_DATE_RE = re.compile(r"[A-Z][a-z]{2} \d{1,2}, \d{4}")
+# 글 링크 = <h3> 제목을 품은 /news/ anchor. 카테고리 링크(/news/announcements 등)·이미지 링크엔
+# <h3>가 없어 자연히 빠진다. (?:(?!</a>).)*? 로 같은 anchor 안의 <h3>만 잡는다.
+_ANTHROPIC_TITLE_RE = re.compile(
+    r'<a[^>]+href="(/news/[^"#?]+)"[^>]*>(?:(?!</a>).)*?<h3[^>]*>(.*?)</h3>', re.DOTALL
+)
+_ANTHROPIC_CARD_OPEN_RE = re.compile(r"<(?:article|li)\b[^>]*>")
+_ANTHROPIC_CARD_CLOSE_RE = re.compile(r"</(?:article|li)>")
+_ANTHROPIC_TIME_RE = re.compile(r"<time[^>]*>([^<]+)</time>")
+
+
+def _anthropic_card(html_text: str, start: int, end: int) -> str:
+    """제목 링크(start~end)를 감싼 카드 — 직전 <article>/<li>부터 직후 닫는 태그까지."""
+    opens = list(_ANTHROPIC_CARD_OPEN_RE.finditer(html_text, 0, start))
+    close = _ANTHROPIC_CARD_CLOSE_RE.search(html_text, end)
+    return html_text[opens[-1].start() if opens else 0 : close.end() if close else len(html_text)]
+
+
+def _anthropic_date_to_iso(text: str) -> str:
+    """'Oct 12, 2026' → '2026-10-12'. 실패 시 빈 문자열."""
+    try:
+        return datetime.strptime(text.strip(), "%b %d, %Y").date().isoformat()
+    except ValueError:
+        return ""
 
 
 def parse_anthropic_news(html_text: str) -> list[dict]:
-    """`/news` HTML의 카드 anchor → post dict. 순서 보존 + href 중복 제거.
+    """`/news` HTML의 카드 → post dict. 순서 보존 + href 중복 제거.
 
-    title은 anchor 텍스트 그대로 (카테고리·날짜 문자열 혼재 — 정확한 제목은
-    read 시점의 og:title이 담당). published는 anchor 안 'Jun 30, 2026' 패턴.
+    2026-10 개편 후 구조(실측): 제목은 글 링크 안 <h3>, 발행일은 링크 밖 같은 카드의 <time>
+    (피처드 <article>에선 링크 앞, 목록 <li data-listing-row>에선 링크 뒤), 요약은 같은 글
+    링크 안 <p>. 카드마다 카테고리 링크와 이미지 링크가 섞여 있어 <h3> 링크만 글로 본다.
     """
     posts: list[dict] = []
     seen: set[str] = set()
-    for m in _NEWS_ANCHOR_RE.finditer(html_text):
-        href, inner = m.groups()
+    for m in _ANTHROPIC_TITLE_RE.finditer(html_text):
+        href, h3 = m.groups()
         if href in seen:
             continue
         seen.add(href)
-        text = _strip_tags(inner)
-        published = ""
-        dm = _ANTHROPIC_DATE_RE.search(text)
-        if dm:
-            try:
-                published = datetime.strptime(dm.group(0), "%b %d, %Y").date().isoformat()
-            except ValueError:
-                pass
+        card = _anthropic_card(html_text, m.start(), m.end())
+        tm = _ANTHROPIC_TIME_RE.search(card)
+        em = re.search(
+            rf'<a[^>]+href="{re.escape(href)}"[^>]*>(?:(?!</a>).)*?<p[^>]*>(.*?)</p>', card, re.DOTALL
+        )
         posts.append(
             {
                 "source": "anthropic",
-                "title": text or href.rsplit("/", 1)[-1],
+                "title": _strip_tags(h3) or href.rsplit("/", 1)[-1],
                 "url": _ANTHROPIC_BASE + href,
-                "summary": "",
-                "published": published,
+                "summary": _strip_tags(em.group(1)) if em else "",
+                "published": _anthropic_date_to_iso(tm.group(1)) if tm else "",
             }
         )
     return posts
