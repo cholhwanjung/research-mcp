@@ -76,7 +76,7 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | **fetch** | `search_papers`, `get_paper_by_id`, `get_citation_contexts` |
 | **graph** | `get_references_by_citations`, `get_citations_by_citations` |
 | **artifact** | `download_paper`, `read_paper`, `extract_paper_figures`, `extract_paper_tables`, `prune_paper_figures`, `prune_paper_tables`, `render_paper_page` |
-| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_search`, `wiki_backlinks`, `wiki_link` |
+| **wiki** | `wiki_read_note`, `wiki_write_note`, `wiki_list`, `wiki_list_hubs`, `wiki_search`, `wiki_backlinks`, `wiki_link`, `wiki_prune_candidates`, `wiki_delete_paper` |
 | **viz** | `build_citation_graph`, `export_citation_network` |
 | **blog** | `get_tech_blog_posts`, `read_blog_post`, `mark_blog_posts_seen` |
 
@@ -91,6 +91,7 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | `paper-ingest` | "이 논문 ingest", "BLIP-2 위키에 추가" | 메타·PDF·figure·table·요약을 한 번에 vault에 누적. 분야를 기존 hub에 매핑. |
 | `citation-analysis` | "BLIP-2 흐름 보여줘", "<arxiv_id> 인용 분석" | anchor 1편 중심으로 refs/cites를 hub로 분류 + `cited_for` 채우기 + 시각화. vault 영구 누적은 사용자 승인 게이트. |
 | `wiki-lint` | "위키 점검", "vault 정리" | vault 정합성 점검 — orphan·깨진 링크·누락 교차참조·stale hub·노트 간 모순 스캔 → 승인 게이트 diff. |
+| `wiki-prune` | "vault 프루닝", "안 쓰는 논문 지워줘" | vault 안에서 아무도 쓰지 않는 논문(hub 자동 링크뿐·통찰 근거 아님·인용 분석 안 됨·autopilot frontier 유입 후 90일 경과·hub seed 아님)을 후보로 → 승인된 것만 노트·figure·PDF·그래프째 삭제 → `_meta/prune-log.md` 기록 → wiki-lint로 깨진 링크 정리. |
 | `insight-capture` | "이 통찰 저장", "notes에 정리" | 논문을 가로질러 종합한 통찰을 `notes/<slug>.md`에 누적 (승인 게이트). |
 | `tech-blog-digest` | "테크 블로그 요약", "blog digest" | Anthropic·OpenAI·DeepMind·Google Research 신규 포스트를 본문 기반 요약해 `tech-blog-digest/<date>.md`에 누적 (소스별 마지막 요약 이후만, 최대 30). |
 | `research-autopilot` | "밤새 논문 쌓아줘", `/loop 10m /research-autopilot scope=graph-rag,finance-agents` | 무인 축적 루프의 한 반복 — 대기열 유도 → 논문 1편 ingest → 인용 분석 → hub 판정 → 깨진 링크 정정을 자동 승인으로 수행하고 `_meta/autopilot-log`에 기록. `scope`(hub slug)는 실행마다 필수 — 없으면 hub 목록과 함께 묻고 돌지 않으며, 전체는 `all`을 명시할 때만. 큐가 비면 scope 안 중심 논문의 인용 이웃으로 리필. 중요도 게이트(citation velocity ≥ 10 또는 vault 참조 2곳 이상, hub가 부르는 논문은 면제)로 낮은 중요도 후보는 보류. figure/table은 추출하지 않는다(텍스트 요약만, 아침에 on-demand). 한도로 끊긴 반복은 vault 상태에서 이어받는다. 정지 시 들어온 논문 요약·통찰 후보·아침 할 일을 담은 실행 보고서를 채팅과 `research-autopilot/<date>.md`에 남긴다. 통찰·lint 반영은 사람 몫. 본 세션은 디스패처(`SKILL.md`)만, 반복은 서브에이전트 워커가 `WORKER.md`를 읽어 새 컨텍스트에서. `/loop`이 사용자가 멈출 때까지 반복. |

@@ -284,6 +284,58 @@ def wiki_link(source: str, target: str, note: str = "") -> str:
     return f"🔗 링크 추가: {source} → {target}"
 
 
+def wiki_prune_candidates(today: str = "", min_age_days: int = 90) -> str:
+    """vault에서 지워도 되는 "주요하지 않은 논문" 후보 — 읽기 전용, 삭제는 `wiki_delete_paper`.
+
+    주요하지 않음 = vault 안에서 아무도 쓰지 않는 논문. 전부 만족해야 후보:
+    notes/ 근거 아님 + 인용 분석 안 됨 · papers/·notes/ 에서 오는 inbound 링크 없음
+    (hub 자동 링크만 있거나 0) · autopilot frontier(source=F)로 들어와 ingest 후
+    min_age_days 경과 · 어떤 hub의 seed_paper도 아님. velocity는 컷이 아니라 정렬(오름차순).
+
+    Args:
+        today: 기준일 YYYY-MM-DD. 비우면 오늘.
+        min_age_days: ingest 후 이 일수 미만이면 제외. 기본 90.
+    """
+    from datetime import date
+
+    from wiki.prune import prune_candidates
+
+    ref = date.fromisoformat(today) if today else date.today()
+    cands = prune_candidates(today=ref, min_age_days=min_age_days)
+    total_mb = sum(c.pdf_bytes for c in cands) / 2**20
+    lines = [f"🧹 프루닝 후보 {len(cands)}편 (기준 {ref.isoformat()}, ingest {min_age_days}일 경과) · PDF {total_mb:.0f} MB"]
+    for i, c in enumerate(cands, 1):
+        inbound = ", ".join(c.inbound) if c.inbound else "없음"
+        lines.append(
+            f"{i}. {c.slug} · {c.arxiv_id} · {c.title}\n"
+            f"   vel {c.velocity:g} · ingested {c.ingested_at} · inbound {inbound} · PDF {c.pdf_bytes / 2**20:.1f} MB"
+        )
+    if cands:
+        lines.append("삭제: 승인된 slug마다 `wiki_delete_paper(slug)`. 되돌림은 arxiv_id로 재ingest.")
+    return "\n".join(lines)
+
+
+def wiki_delete_paper(slug: str) -> str:
+    """논문 1편을 vault에서 삭제 — `papers/<slug>/` 폴더(노트·figure·table) + `pdfs/<arxiv_id>.pdf` + `graphs/<slug>.md`.
+
+    되돌릴 수 없다(vault는 git 밖). 다른 노트의 `[[slug]]` 링크는 깨진 링크로 남으므로
+    삭제 뒤 `wiki-lint`로 정리한다.
+
+    Args:
+        slug: `papers/` 아래 폴더 이름(title-slug).
+    """
+    from wiki.prune import delete_paper
+
+    try:
+        out = delete_paper(slug.strip())
+    except VaultPathError as e:
+        return f"❌ {e}"
+    except FileNotFoundError as e:
+        return f"❌ 논문 폴더 없음: {e}"
+    removed = "\n".join(f"   - {r}" for r in out["removed"])
+    return f"🗑️ 삭제: {out['slug']} · {out['arxiv_id']} · {out['title']}\n{removed}"
+
+
 def register(mcp) -> None:
     mcp.tool()(wiki_read_note)
     mcp.tool()(wiki_write_note)
@@ -292,3 +344,5 @@ def register(mcp) -> None:
     mcp.tool()(wiki_search)
     mcp.tool()(wiki_backlinks)
     mcp.tool()(wiki_link)
+    mcp.tool()(wiki_prune_candidates)
+    mcp.tool()(wiki_delete_paper)

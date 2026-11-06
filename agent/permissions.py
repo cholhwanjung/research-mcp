@@ -26,7 +26,7 @@ TOOL_KINDS: dict[str, str] = {
     "search_papers": "read", "get_paper_by_id": "read", "get_references_by_citations": "read",
     "get_citations_by_citations": "read", "get_citation_contexts": "read", "download_paper": "read",
     "read_paper": "read", "wiki_read_note": "read", "wiki_list_hubs": "read", "wiki_list": "read",
-    "wiki_search": "read", "wiki_backlinks": "read", "get_tech_blog_posts": "read", "read_blog_post": "read",
+    "wiki_search": "read", "wiki_backlinks": "read", "wiki_prune_candidates": "read", "get_tech_blog_posts": "read", "read_blog_post": "read",
     "read_file": "read", "glob_files": "read", "grep_files": "read", "load_skill": "read",
     "read_skill_file": "read", "delegate": "read", "autopilot_status": "read", "autopilot_report": "read",
     # 제어 — 실행 중인 작업을 멈춘다
@@ -36,7 +36,7 @@ TOOL_KINDS: dict[str, str] = {
     "build_citation_graph": "edit", "export_citation_network": "edit", "render_paper_page": "edit",
     "mark_blog_posts_seen": "edit", "autopilot_config": "edit",
     # 삭제
-    "prune_paper_figures": "delete", "prune_paper_tables": "delete",
+    "prune_paper_figures": "delete", "prune_paper_tables": "delete", "wiki_delete_paper": "delete",
     # 비용 — 모델·외부 API 호출이 이어진다
     "autopilot_start": "costly", "extract_paper_figures": "costly", "extract_paper_tables": "costly",
 }
