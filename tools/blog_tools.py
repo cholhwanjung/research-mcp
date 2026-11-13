@@ -26,7 +26,7 @@ async def _collect(slug: str) -> tuple[list[dict], Exception | None]:
 
 
 async def get_tech_blog_posts(limit_per_source: int = 30) -> str:
-    """테크 블로그(Anthropic·OpenAI·Google DeepMind·Google Research)의 미요약 신규
+    """테크 블로그(Anthropic·Claude·OpenAI·Google DeepMind·Google Research)의 미요약 신규
     포스트를 소스별 최신순 최대 N개 반환합니다.
 
     소스마다 mark_blog_posts_seen으로 처리한 포스트 중 가장 최근 발행일 이후

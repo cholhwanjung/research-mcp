@@ -4,6 +4,10 @@
 - anthropic: RSS 없음 → `/news` HTML 카드 파싱. 2026-10 개편 뒤 제목은 링크 안 <h3>,
   발행일은 링크 밖 같은 카드의 <time>, 카드마다 카테고리 링크가 섞임 (실측 2026-11-02).
   본문은 `<article>` 스코프로 깨끗하게 추출됨.
+- claude:    claude.com/resources/articles — 제품 발표·고객 사례·가이드. anthropic.com/news에
+  실리지 않는 글이 여기 있다(예: Claude Duet). RSS 없음, sitemap엔 날짜 없음 → 목록 HTML 파싱.
+  카드는 링크 하나 안에 날짜 span·<h3> 제목·<p> 요약. "View more"는 `?page=N` 누적 로드
+  (1쪽 11편, 4쪽 36편)라 한도 30편보다 넓은 4쪽을 받는다 (실측 2026-11-13, 주 3~11편).
 - openai:    공식 RSS. 개별 글 페이지는 403 JS challenge (브라우저 UA로도 차단)
   → `body: False`, RSS description으로만 요약.
 - deepmind:  공식 RSS. 글 페이지에 `<article>` 없음 → `<main>` fallback.
@@ -47,6 +51,13 @@ SOURCES: dict[str, dict] = {
         "url": "https://www.anthropic.com/news",
         "body": True,
         "domains": ("www.anthropic.com", "anthropic.com"),
+    },
+    "claude": {
+        "label": "Claude",
+        "kind": "claude_html",
+        "url": "https://claude.com/resources/articles?page=4",
+        "body": True,
+        "domains": ("claude.com", "www.claude.com"),
     },
     "openai": {
         "label": "OpenAI",
@@ -172,6 +183,44 @@ def parse_anthropic_news(html_text: str) -> list[dict]:
     return posts
 
 
+_CLAUDE_BASE = "https://claude.com"
+# 글 링크 = <h3> 제목을 품은 /resources/articles/ anchor. 날짜·제목·요약이 모두 anchor 안에 있다.
+_CLAUDE_ARTICLE_RE = re.compile(
+    r'<a[^>]+href="(/resources/articles/[^"#?]+)"[^>]*>((?:(?!</a>).)*?<h3[^>]*>(.*?)</h3>(?:(?!</a>).)*)</a>',
+    re.DOTALL,
+)
+_CLAUDE_DATE_RE = re.compile(r"[A-Z][a-z]{2} \d{1,2}, \d{4}")
+
+
+def parse_claude_articles(html_text: str) -> list[dict]:
+    """claude.com `/resources/articles` 목록 → post dict. 순서 보존 + href 중복 제거.
+
+    카드 구조(실측 2026-11-13): `<a href="/resources/articles/slug">` 안에 종류·날짜 span
+    ('Nov 12, 2026'), <h3> 제목, <p> 요약(없을 수 있음), 태그 span. 상단 피처드 영역이 같은
+    글을 한 번 더 싣는다. 날짜는 제목 앞 부분에서만 찾는다(제목 속 날짜 문자열 오인 방지).
+    """
+    posts: list[dict] = []
+    seen: set[str] = set()
+    for m in _CLAUDE_ARTICLE_RE.finditer(html_text):
+        href, inner, h3 = m.groups()
+        if href in seen:
+            continue
+        seen.add(href)
+        dm = _CLAUDE_DATE_RE.search(_strip_tags(inner.split("<h3", 1)[0]))
+        # <p> 뒤에 공백/닫힘만 허용 — 아이콘의 <path>를 <p>로 잡지 않게
+        pm = re.search(r"<p(?:\s[^>]*)?>(.*?)</p>", inner, re.DOTALL)
+        posts.append(
+            {
+                "source": "claude",
+                "title": _strip_tags(h3) or href.rsplit("/", 1)[-1],
+                "url": _CLAUDE_BASE + href,
+                "summary": _strip_tags(pm.group(1)) if pm else "",
+                "published": _anthropic_date_to_iso(dm.group(0)) if dm else "",
+            }
+        )
+    return posts
+
+
 def extract_body(html_text: str, max_chars: int = 12000) -> str:
     """글 페이지 HTML → 본문 문단 텍스트 (요약 입력용).
 
@@ -259,6 +308,8 @@ async def fetch_posts(source: str) -> list[dict]:
         return []
     if cfg["kind"] == "rss":
         return parse_rss(text, source=source)
+    if cfg["kind"] == "claude_html":
+        return parse_claude_articles(text)
     return parse_anthropic_news(text)
 
 
