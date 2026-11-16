@@ -3,8 +3,9 @@
 - vault/PDF 경로는 [ADR-002](../docs/ADR.md#adr-002) — 프로젝트 외부 `~/Documents/research-wiki/`.
 - CACHE_DIR은 프로젝트 내 `.cache/` (gitignore). 외부 API 응답 디스크 캐시 (Phase 3.0).
 - SS_API_KEY는 Semantic Scholar API key (D-11). 설정 시 자동으로 `x-api-key` 헤더 첨부.
-- GOOGLE_API_KEY는 Gemini vision API 키 (ADR-019). figure/table bbox 추정에 필수.
-- GEMINI_MODEL은 사용할 모델명 (기본 `gemini-2.5-pro`).
+- VISION_MODEL은 figure/table bbox 추정 모델 `<provider>:<model>` (ADR-019, ADR-076).
+  미설정이면 `google:<GEMINI_MODEL>` — GEMINI_MODEL 기본은 `gemini-2.5-pro`.
+  provider별 키: google → GOOGLE_API_KEY, openrouter → OPENROUTER_API_KEY.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ def _load_dotenv(path: Path) -> None:
     """프로젝트 root의 .env를 환경변수로 로드. 이미 set된 변수는 덮어쓰지 않음."""
     if not path.is_file():
         return
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -53,3 +54,4 @@ VAULT_PATH: Path = _env_path("OBSIDIAN_VAULT_PATH", _DEFAULT_VAULT)
 PDF_PATH: Path = _env_path("PDF_PATH", VAULT_PATH / "pdfs")
 CACHE_DIR: Path = default_cache_dir()
 GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
+VISION_MODEL: str = os.environ.get("VISION_MODEL") or f"google:{GEMINI_MODEL}"
