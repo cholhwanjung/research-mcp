@@ -4,8 +4,8 @@
 - CACHE_DIR은 프로젝트 내 `.cache/` (gitignore). 외부 API 응답 디스크 캐시 (Phase 3.0).
 - SS_API_KEY는 Semantic Scholar API key (D-11). 설정 시 자동으로 `x-api-key` 헤더 첨부.
 - VISION_MODEL은 figure/table bbox 추정 모델 `<provider>:<model>` (ADR-019, ADR-076).
-  미설정이면 `google:<GEMINI_MODEL>` — GEMINI_MODEL 기본은 `gemini-2.5-pro`.
-  provider별 키: google → GOOGLE_API_KEY, openrouter → OPENROUTER_API_KEY.
+  미설정이면 OpenRouter의 Qwen3-VL (ADR-077).
+  provider별 키: openrouter → OPENROUTER_API_KEY, google → GOOGLE_API_KEY.
 """
 
 from __future__ import annotations
@@ -34,6 +34,14 @@ def _load_dotenv(path: Path) -> None:
 
 _load_dotenv(_PROJECT_ROOT / ".env")
 
+_DEFAULT_VISION_MODEL = "openrouter:qwen/qwen3-vl-235b-a22b-instruct"
+
+
+def default_vision_model() -> str:
+    """VISION_MODEL의 기본 계산 — env 우선(빈 문자열은 미설정), 없으면 Qwen3-VL (ADR-077)."""
+    return os.environ.get("VISION_MODEL") or _DEFAULT_VISION_MODEL
+
+
 def default_cache_dir() -> Path:
     """CACHE_DIR의 기본 계산 — env 우선, 없으면 프로젝트 루트의 `.cache/`.
 
@@ -53,5 +61,4 @@ def _env_path(name: str, default: Path) -> Path:
 VAULT_PATH: Path = _env_path("OBSIDIAN_VAULT_PATH", _DEFAULT_VAULT)
 PDF_PATH: Path = _env_path("PDF_PATH", VAULT_PATH / "pdfs")
 CACHE_DIR: Path = default_cache_dir()
-GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
-VISION_MODEL: str = os.environ.get("VISION_MODEL") or f"google:{GEMINI_MODEL}"
+VISION_MODEL: str = default_vision_model()

@@ -21,7 +21,7 @@ inputs:
 | 3 | `download_paper(arxiv_id)` | `pdfs/{arxiv_id}.pdf` (캐시 hit이면 skip) |
 | 4 | `read_paper(arxiv_id, max_pages=0)` | 헤더 `({읽은}/{총} 페이지)`의 총 쪽수가 `page_count`. `research-autopilot` 호출이면 `max_pages=15` |
 | 5 | **figure/table 게이트** | `page_count` ≥ 20 **또는** autopilot 호출 → 6~8 skip (`figures: []`, `figures_skipped: true`). 사용자가 figure 추출을 명시 요청하면 쪽수 무관 진행 |
-| 6 | `extract_paper_figures(arxiv_id, slug=)` · `extract_paper_tables(arxiv_id, slug=)` | Vision bbox 추정. `GOOGLE_API_KEY` 필요 |
+| 6 | `extract_paper_figures(arxiv_id, slug=)` · `extract_paper_tables(arxiv_id, slug=)` | Vision bbox 추정. 설정된 vision 모델의 API 키 필요 (기본 `OPENROUTER_API_KEY`) |
 | 7 | 선별 (LLM) | **keep**: architecture/framework·method 도해·결과 plot/table·대표 qualitative 1-2장. **drop**: 데이터셋 샘플 그리드·부록 보충·로고·같은 정보 반복. table은 대부분 keep. 같은 번호의 sub-image는 묶어 판정. 모호하면 keep |
 | 8 | `prune_paper_figures(arxiv_id, keep=[...], slug=)` · `prune_paper_tables(...)` | `keep`은 번호만(`["fig_1", "table_2"]`)도 된다 |
 | 9 | `wiki_list_hubs()` → 요약 (LLM) | 한국어 TL;DR·Key Contributions·Methods·Findings. `topics`는 **기존 hub 1-3개** — 태깅 규칙은 `wiki_list_hubs()` 응답 첫 줄. 매칭 불가 → 신규 hub 후보로 사용자 승인(autopilot은 그 스킬의 자동 승인 규칙) |

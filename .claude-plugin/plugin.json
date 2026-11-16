@@ -13,10 +13,16 @@
       "title": "Obsidian vault 경로",
       "description": "노트·PDF·figure를 저장할 vault 루트. 예: /Users/you/Documents/research-wiki (비우면 ~/Documents/research-wiki)"
     },
+    "openrouter_api_key": {
+      "type": "string",
+      "title": "OpenRouter API Key (Qwen3-VL)",
+      "description": "figure/table bbox 추정용. 없으면 멀티모달 추출은 skip되고 텍스트 요약만 저장.",
+      "sensitive": true
+    },
     "google_api_key": {
       "type": "string",
-      "title": "Google API Key (Gemini Vision)",
-      "description": "figure/table bbox 추정용. 없으면 멀티모달 추출은 skip되고 텍스트 요약만 저장.",
+      "title": "Google API Key (Gemini Vision, 선택)",
+      "description": "figure/table 추출 모델을 VISION_MODEL=google:<model>로 바꿔 쓸 때만 필요.",
       "sensitive": true
     },
     "ss_api_key": {
@@ -32,6 +38,7 @@
       "args": ["--directory", "${CLAUDE_PLUGIN_ROOT}", "run", "python", "server.py"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "${user_config.vault_path}",
+        "OPENROUTER_API_KEY": "${user_config.openrouter_api_key}",
         "GOOGLE_API_KEY": "${user_config.google_api_key}",
         "SS_API_KEY": "${user_config.ss_api_key}"
       }

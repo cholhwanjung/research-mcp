@@ -27,7 +27,7 @@ vault/papers/blip-2/
 ```
 
 - **PDF 원본 보관** — `vault/pdfs/<arxiv_id>.pdf` 에 영구 저장.
-- **Vision 기반 figure / table 추출** — Gemini Vision으로 figure·table 영역을 crop한다. *(`GOOGLE_API_KEY` 필요)*
+- **Vision 기반 figure / table 추출** — vision 모델(기본 Qwen3-VL)로 figure·table 영역을 crop한다. *(`OPENROUTER_API_KEY` 필요)*
 - **안정 hub 분류** — 큐레이트된 **hub 노트**에 1–3개로 매핑.
 - **양방향 wikilink** — `[[clip]]` 같은 wikilink가 자동 누적.
 - **vault 리트리벌** — `wiki_search`로 "질문 → 관련 노트"를 어휘 seed + `[[wikilink]]` 이웃 확장으로 검색.
@@ -108,7 +108,8 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 | 설정 | 설명 |
 |---|---|
 | `vault_path` | vault 루트 (예: `/Users/you/Documents/research-wiki`). 기본값 `~/Documents/research-wiki` |
-| `google_api_key` | Gemini Vision — figure/table 추출에 사용 |
+| `openrouter_api_key` | Qwen3-VL(OpenRouter) — figure/table 추출에 사용 |
+| `google_api_key` | figure/table 추출을 Gemini로 바꿔 쓸 때만 필요 |
 | `ss_api_key` | Semantic Scholar API key — API 요청 한도 상향 |
 
 업데이트는 `claude plugin update research-mcp@research-mcp-local`을 실행하고 새 세션을 연다. vault는 Obsidian으로 열어 노트와 그래프를 본다.
@@ -127,7 +128,7 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
       "args": ["--directory", "/path/to/research-mcp", "run", "python", "server.py"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/Users/you/Documents/research-wiki",
-        "GOOGLE_API_KEY": "<Gemini Vision — figure/table 추출용>",
+        "OPENROUTER_API_KEY": "<Qwen3-VL — figure/table 추출용>",
         "SS_API_KEY": "<optional Semantic Scholar API key>"
       }
     }
@@ -139,9 +140,9 @@ sources/  →  analysis/  →  wiki/  →  tools/  ─┬─  server.py         
 |---|---|---|
 | `OBSIDIAN_VAULT_PATH` | `~/Documents/research-wiki` | 노트·PDF·figure 저장 vault 루트 |
 | `PDF_PATH` | `$OBSIDIAN_VAULT_PATH/pdfs` | PDF 원본 저장 위치 |
-| `GOOGLE_API_KEY` | (없음) | Gemini Vision — figure/table bbox 추정에 필요 |
-| `VISION_MODEL` | `google:gemini-2.5-pro` | figure/table 추출 모델 `<provider>:<model>` (예: `openrouter:qwen/qwen3-vl-235b-a22b-instruct`) |
-| `OPENROUTER_API_KEY` | (없음) | `VISION_MODEL`이 `openrouter:`일 때 필요 |
+| `OPENROUTER_API_KEY` | (없음) | Qwen3-VL(OpenRouter) — figure/table bbox 추정에 필요 |
+| `VISION_MODEL` | `openrouter:qwen/qwen3-vl-235b-a22b-instruct` | figure/table 추출 모델 `<provider>:<model>` (예: `google:gemini-3.8-flash`) |
+| `GOOGLE_API_KEY` | (없음) | `VISION_MODEL`이 `google:`일 때 필요 |
 | `SS_API_KEY` | (없음) | Semantic Scholar API key — API 요청 한도 상향 |
 | `OPENALEX_API_KEY` | (없음) | OpenAlex API key(무료) — 인용 수집 보강에 사용 |
 
@@ -204,7 +205,7 @@ cd web && npm run dev                                       # 프론트(:3000)
 | `RESEARCH_AGENT_STATE_DIR` | 스냅샷·감사 로그 폴더 (기본 `.cache/agent`, compose는 `/data/agent`) |
 | `RESEARCH_MODEL` | 기본 채팅 모델 (`anthropic:…` / `openai:…` / `google:…`) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | 사용할 provider 키 |
-| `GOOGLE_API_KEY` | Gemini Vision — figure/table 추출 (ingest 시) |
+| `OPENROUTER_API_KEY` | Qwen3-VL — figure/table 추출 (ingest 시) |
 | `VAULT_HOST_PATH` | (compose) host vault 절대경로 → 컨테이너 `/vault` |
 
 ---
