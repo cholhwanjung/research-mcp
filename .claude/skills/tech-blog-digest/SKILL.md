@@ -1,6 +1,6 @@
 ---
 name: tech-blog-digest
-description: Anthropic/Claude/OpenAI/DeepMind/Google Research 블로그에서 소스별 마지막 요약 이후 올라온 포스트(소스별 최대 30)를 한국어로 요약해 vault `tech-blog-digest/{date}.md`에 누적한다. seen보다 옛날 글은 건너뛴다.
+description: Anthropic/Claude/Claude Dev/OpenAI/DeepMind/Google Research 블로그에서 소스별 마지막 요약 이후 올라온 포스트(소스별 최대 30)를 한국어로 요약해 vault `tech-blog-digest/{date}.md`에 누적한다. seen보다 옛날 글은 건너뛴다.
 trigger:
   - "테크 블로그 요약"
   - "blog digest"
@@ -26,7 +26,7 @@ inputs:
 ```yaml
 date: 2026-07-13
 type: blog-digest
-sources: [anthropic, claude, openai, deepmind, google-research]
+sources: [anthropic, claude, claude-dev, openai, deepmind, google-research]
 post_count: 8
 ```
 ```markdown
@@ -36,6 +36,7 @@ post_count: 8
 ### [{제목}]({url}) — {published}
 {2-3문단}
 ## Claude               ← claude.com 글. 형식은 Anthropic과 같다
+## Claude Dev           ← claude.dev 개발자 블로그 글. 형식은 Anthropic과 같다
 ## OpenAI
 *본문 접근 불가 — 아래는 RSS 발췌 기반 요약*   ← 섹션 머리에 한 번만, 항목마다 반복하지 않는다
 ### [{제목}]({url}) — {published}

@@ -8,6 +8,9 @@
   실리지 않는 글이 여기 있다(예: Claude Duet). RSS 없음, sitemap엔 날짜 없음 → 목록 HTML 파싱.
   카드는 링크 하나 안에 날짜 span·<h3> 제목·<p> 요약. "View more"는 `?page=N` 누적 로드
   (1쪽 11편, 4쪽 36편)라 한도 30편보다 넓은 4쪽을 받는다 (실측 2026-11-13, 주 3~11편).
+- claude-dev: claude.dev 개발자 블로그(엔지니어링 글 — Claude Code 팀 작업 방식·모델 선택·
+  멀티 에이전트 등). claude.com 글의 관련 글 카드에만 링크되고 그쪽 목록엔 없다. 공식 RSS
+  (`/rss.xml`, 20편·2026-04~, 월 2~5편), 본문은 `<main>` 스코프로 추출 (실측 2026-11-23).
 - openai:    공식 RSS. 개별 글 페이지는 403 JS challenge (브라우저 UA로도 차단)
   → `body: False`, RSS description으로만 요약.
 - deepmind:  공식 RSS. 글 페이지에 `<article>` 없음 → `<main>` fallback.
@@ -58,6 +61,13 @@ SOURCES: dict[str, dict] = {
         "url": "https://claude.com/resources/articles?page=4",
         "body": True,
         "domains": ("claude.com", "www.claude.com"),
+    },
+    "claude-dev": {
+        "label": "Claude Dev",
+        "kind": "rss",
+        "url": "https://claude.dev/rss.xml",
+        "body": True,
+        "domains": ("claude.dev", "www.claude.dev"),
     },
     "openai": {
         "label": "OpenAI",

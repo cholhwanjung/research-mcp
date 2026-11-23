@@ -49,7 +49,7 @@ graph LR
 ```
 
 ### 4. 테크 블로그 다이제스트
-- **테크 블로그 다이제스트** — Anthropic·Claude(claude.com)·OpenAI·DeepMind·Google Research 블로그의 신규 포스트를 몇 문단으로 요약해 `tech-blog-digest/<date>.md`에 누적. 실행할 때마다 소스별로 마지막 요약 이후 올라온 글만 처리한다.
+- **테크 블로그 다이제스트** — Anthropic·Claude(claude.com·claude.dev)·OpenAI·DeepMind·Google Research 블로그의 신규 포스트를 몇 문단으로 요약해 `tech-blog-digest/<date>.md`에 누적. 실행할 때마다 소스별로 마지막 요약 이후 올라온 글만 처리한다.
 
 ---
 
