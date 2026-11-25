@@ -12,6 +12,7 @@ from analysis.ranking import citation_velocity
 from core.http import RETRY_DELAYS as _RETRY_DELAYS
 from core.http import get as _get
 from sources.semantic_scholar import lookup_error_message as _lookup_error_message
+from sources.arxiv import fetch_dates as _fetch_arxiv_dates
 from sources.arxiv import parse_arxiv as _parse_arxiv
 from sources.semantic_scholar import (
     SS_BASE,
@@ -117,7 +118,7 @@ async def get_paper_by_id(paper_id: str) -> str:
                   또는 Semantic Scholar SHA ID.
     """
     fields = (
-        "title,authors,abstract,url,year,venue,citationCount,"
+        "title,authors,abstract,url,year,publicationDate,venue,citationCount,"
         "referenceCount,influentialCitationCount,fieldsOfStudy,"
         "publicationTypes,externalIds,tldr"
     )
@@ -134,6 +135,17 @@ async def get_paper_by_id(paper_id: str) -> str:
         lines.append(f"Authors: {', '.join(a.get('name', '') for a in authors[:10])}")
     if data.get("year"):
         lines.append(f"Year: {data['year']}")
+    # ADR-079: 게시일·수정일은 arXiv 기준(v1 제출일·최신 버전 제출일). arXiv가 응답하지 않으면
+    # 게시일만 SS publicationDate로 대체하고, 수정일은 없는 것과 구분되게 ⏳로 남긴다.
+    arxiv_id = (data.get("externalIds") or {}).get("ArXiv")
+    dates = await _fetch_arxiv_dates(arxiv_id) if arxiv_id else None
+    published = (dates or {}).get("published") or data.get("publicationDate")
+    if published:
+        lines.append(f"Published: {published}")
+    if dates:
+        lines.append(f"Revised: {dates['revised']} ({dates['version']})")
+    elif arxiv_id:
+        lines.append("Revised: ⏳ arXiv 응답 없음")
     if data.get("venue"):
         lines.append(f"Venue: {data['venue']}")
     if data.get("fieldsOfStudy"):

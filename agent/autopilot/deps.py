@@ -47,11 +47,12 @@ from agent.autopilot.scope import ScopeInterpretation
 from agent.autopilot.vaultlinks import PlainNames, vault_paper_details
 from agent.autopilot.sources import ArxivHit, NetworkPaper, fetch_citations, fetch_contexts, fetch_references, search_arxiv
 from analysis.ranking import citation_velocity
+from sources.arxiv import fetch_dates as fetch_arxiv_dates
 from sources.semantic_scholar import SS_BASE, lookup_error_message, resolve_id, ss_get
 from tools.pdf_tools import read_paper
 
 _PAGES = re.compile(r"\((\d+)/(\d+) 페이지\)")
-_FIELDS = "paperId,title,authors,year,venue,citationCount,influentialCitationCount,externalIds,abstract"
+_FIELDS = "paperId,title,authors,year,publicationDate,venue,citationCount,influentialCitationCount,externalIds,abstract"
 
 
 class StandaloneDeps:
@@ -121,6 +122,7 @@ class StandaloneDeps:
             citation_velocity=round(citation_velocity(data, self.current_year), 1),
             page_count=None,
             abstract=str(data.get("abstract") or ""),
+            published_at=data.get("publicationDate"),
         )
 
     async def fetch_meta(self, arxiv_id: str) -> PaperMeta:
@@ -128,6 +130,10 @@ class StandaloneDeps:
         header = check_tool_output(await read_paper(arxiv_id, max_pages=1))
         pages = _PAGES.search(header)
         meta.page_count = int(pages.group(2)) if pages else None
+        # 게시일·수정일은 arXiv 기준 — 스크리닝(paper_info)이 아니라 수록 때만 조회한다.
+        dates = await fetch_arxiv_dates(arxiv_id)
+        if dates:
+            meta.published_at, meta.revised_at = dates["published"], dates["revised"]
         return meta
 
     async def source_text(self, arxiv_id: str) -> str:

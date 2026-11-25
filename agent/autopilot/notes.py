@@ -43,6 +43,8 @@ class PaperMeta:
     citation_velocity: float
     page_count: int | None
     abstract: str = ""
+    published_at: str | None = None  # v1 제출일 (YYYY-MM-DD)
+    revised_at: str | None = None  # 최신 버전 제출일 (YYYY-MM-DD)
 
 
 class HubProposal(BaseModel):
@@ -153,6 +155,8 @@ def render_paper_note(
         "title": meta.title,
         "authors": list(meta.authors),
         "year": meta.year,
+        "published_at": meta.published_at,
+        "revised_at": meta.revised_at,
         "venue": meta.venue,
         "citation_count": meta.citation_count,
         "influential_citation_count": meta.influential_citation_count,

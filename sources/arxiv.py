@@ -2,15 +2,24 @@
 
 `parse_arxiv`: server.py의 _parse_arxiv 이전 (Phase 1.2).
 `normalize_arxiv_id` + `download_pdf`: Phase 2.2 — PDF persistence 지원.
+`fetch_dates`: 게시일·수정일 조회 (ADR-079).
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 import aiohttp
 
+from core import cache
+from core.http import get as _get
 from core.slug import is_arxiv_id
+
+ARXIV_API = "https://export.arxiv.org/api/query"
+ARXIV_DATES_TTL = 7 * 24 * 3600  # 새 버전이 올라오면 revised가 바뀐다 — SS 메타 캐시와 같은 주기
+# 날짜는 부가 정보다. export.arxiv.org는 rate limit 시 40~57초를 끌므로 재시도까지 합쳐 이 시간에 끊는다.
+ARXIV_DATES_TIMEOUT = 10
 
 
 def normalize_arxiv_id(paper_id: str) -> str | None:
@@ -71,7 +80,36 @@ def parse_arxiv(xml: str) -> list[dict]:
                     "url": url or f"https://arxiv.org/abs/{arxiv_id}",
                     "pdf_url": pdf,
                     "published": _tag("published")[:10],
+                    "updated": _tag("updated")[:10],
                     "categories": re.findall(r'<category[^>]*term="([^"]*)"', entry)[:5],
                 }
             )
     return papers
+
+
+async def fetch_dates(arxiv_id: str) -> dict | None:
+    """arXiv `id_list` 1건 조회 → `{published, revised, version}` (ADR-079). 디스크 캐시 경유.
+
+    published는 v1 제출일, revised는 최신 버전 제출일(v1뿐이면 둘이 같다), version은 `v2` 형식.
+    arXiv가 시간 안에 응답하지 않거나 피드가 아니면 None — 일시적 응답은 캐시하지 않는다.
+    """
+    url = f"{ARXIV_API}?id_list={arxiv_id}"
+    try:
+        xml = await cache.get_or_fetch(
+            url,
+            lambda: asyncio.wait_for(_get(url), ARXIV_DATES_TIMEOUT),
+            ttl=ARXIV_DATES_TTL,
+            cache_if=lambda v: isinstance(v, str) and "<entry>" in v,
+        )
+    except asyncio.TimeoutError:
+        return None
+    entries = parse_arxiv(xml) if isinstance(xml, str) else []
+    if not entries:
+        return None
+    entry = entries[0]
+    version = re.search(r"v\d+$", entry["arxiv_id"])
+    return {
+        "published": entry["published"],
+        "revised": entry["updated"],
+        "version": version.group(0) if version else "",
+    }

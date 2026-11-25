@@ -16,7 +16,7 @@ inputs:
 
 | # | 도구 | 규칙 |
 |---|---|---|
-| 1 | `get_paper_by_id(arxiv_id)` | 메타·인용수·**title** |
+| 1 | `get_paper_by_id(arxiv_id)` | 메타·인용수·**title**·게시일·수정일 |
 | 2 | title → slug | grep 친화 title-slug (`"BLIP-2: …"` → `blip-2`). 이후 vault 작업은 전부 이 slug. arxiv_id는 frontmatter 식별자로만 |
 | 3 | `download_paper(arxiv_id)` | `pdfs/{arxiv_id}.pdf` (캐시 hit이면 skip) |
 | 4 | `read_paper(arxiv_id, max_pages=0)` | 헤더 `({읽은}/{총} 페이지)`의 총 쪽수가 `page_count`. `research-autopilot` 호출이면 `max_pages=15` |
@@ -25,7 +25,7 @@ inputs:
 | 7 | 선별 (LLM) | **keep**: architecture/framework·method 도해·결과 plot/table·대표 qualitative 1-2장. **drop**: 데이터셋 샘플 그리드·부록 보충·로고·같은 정보 반복. table은 대부분 keep. 같은 번호의 sub-image는 묶어 판정. 모호하면 keep |
 | 8 | `prune_paper_figures(arxiv_id, keep=[...], slug=)` · `prune_paper_tables(...)` | `keep`은 번호만(`["fig_1", "table_2"]`)도 된다 |
 | 9 | `wiki_list_hubs()` → 요약 (LLM) | 한국어 TL;DR·Key Contributions·Methods·Findings. `topics`는 **기존 hub 1-3개** — 태깅 규칙은 `wiki_list_hubs()` 응답 첫 줄. 매칭 불가 → 신규 hub 후보로 사용자 승인(autopilot은 그 스킬의 자동 승인 규칙) |
-| 10 | `wiki_write_note(slug, frontmatter, body)` | `papers/{slug}/{slug}.md`. `citation_velocity`는 step 1 응답의 `Velocity` |
+| 10 | `wiki_write_note(slug, frontmatter, body)` | `papers/{slug}/{slug}.md`. `citation_velocity`는 step 1 응답의 `Velocity`. `published_at`·`revised_at`은 step 1 응답 `Published`·`Revised` 줄의 날짜 — 줄이 없거나 `⏳`면 `null` |
 | 11 | (선택) `citation-analysis` | references / cited_by 채움. 사용자 요청 시 |
 
 `render_paper_page(arxiv_id, page=N, slug=)`는 사용자가 특정 페이지(수식·crop 실패 페이지) 보존을 요청할 때만.
@@ -38,6 +38,8 @@ slug: {title-slug}
 title: ...
 authors: [...]
 year: ...
+published_at: {YYYY-MM-DD}     # 최초 게시일 (v1)
+revised_at: {YYYY-MM-DD}       # 최신 버전 게시일
 venue: ...
 citation_count: ...
 influential_citation_count: ...
